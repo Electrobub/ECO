@@ -1,0 +1,22 @@
+ECO
+Electronic Component Organiser
+--------------------------------------
+This program is still under works.
+--------------------------------------
+
+This program was made to help store and arrange
+collections of electrical components. Upon searching and
+not finding a program that fit my needs (all I wanted was something
+simple and easy to use) I decided to write my own.
+
+Not only was this program made out of the sheer usability for my
+everyday tasks but also as a base for learning how to use Qt for GUIs
+and for learning how to use GitHub.
+
+
+
+Written and Released by Electrobub.
+
+
+Released under the GPL 2
+Copyright Electrobub 2014
