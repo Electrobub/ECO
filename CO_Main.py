@@ -5,9 +5,18 @@
 # - Add Coloured BG to QTY cell, if qty low - look at Qt.BackgroundColorRole (in data method)
 
 #TODO
-#Look what super() does. (Is it necessary in Dialog? componentDialog)
+# - Look what super() does. (Is it necessary in Dialog? componentDialog)
 #or is it possible to call the int like QtGui.QDialog.__init__(self, parent)
+# - In componentDialog figure out the proper passing of parent, so the dialog gets centred correctly
+# - look into setSelectionMode(SingleSelection) - To select a row at a time?
 
+# List Positions
+NAME = 0
+CATEGORY = 1
+DESCRIPTION = 2
+PACKAGE = 3
+MANUFACTURER = 5
+DATASHEET = 6
 # Position of QTY column
 QTY = 4
 
@@ -170,7 +179,20 @@ class Overview(QtGui.QWidget):
         
     def openDialog(self):
         
-        self.dialog = componentDialog(self)
+        #Check if more than one row is selected
+        indexList = self.tableview.selectionModel().selectedIndexes()
+        if (len(indexList) > 1):
+            QtGui.QMessageBox.information(self, "Modify - Multiple Rows Selected", "Multiple Rows Selected - Please Choose A Single Row")
+            return
+        elif (len(indexList) is 0):
+            QtGui.QMessageBox.information(self, "Modify", "No Row Selected - Please Choose A Single Row")
+            return
+        
+        row = indexList[0].row()
+        rowData = self.tablemode.getRowData(row)
+
+        #indexRow = self.tableview.selectionModel()
+        self.dialog = componentDialog(rowData)
         
         #Modal Dialog
         self.dialog.exec_()
@@ -178,9 +200,10 @@ class Overview(QtGui.QWidget):
 
 class componentDialog(QtGui.QDialog):
     
-    def __init__(self, parent):
+    def __init__(self, values):
         super(componentDialog, self).__init__()
-
+        #print data
+        print values
         nameLabel = QtGui.QLabel('Name')
         manufLabel = QtGui.QLabel('Manufacturer')
         catLabel = QtGui.QLabel('Category')
@@ -189,11 +212,11 @@ class componentDialog(QtGui.QDialog):
         dataLabel = QtGui.QLabel('Datasheet')
         commentLabel = QtGui.QLabel('Comments')
         
-        nameEdit = QtGui.QLineEdit('Name')
+        nameEdit = QtGui.QLineEdit(values[NAME])
         manufEdit = QtGui.QComboBox()
         catEdit = QtGui.QComboBox()
         packEdit = QtGui.QComboBox()
-        descEdit = QtGui.QLineEdit()
+        descEdit = QtGui.QLineEdit(values[DESCRIPTION])
         dataEdit = QtGui.QLineEdit()
         commentEdit = QtGui.QTextEdit()
         
@@ -233,6 +256,8 @@ class componentDialog(QtGui.QDialog):
         
         manufEdit.addItems(['Texas Instruments','SF','Avr','Maxxim'])
         manufEdit.setEditable(True)
+        #TODO Set proper index
+        manufEdit.setCurrentIndex(0)
         
         catEdit.addItems(['Linear Regulators', 'Microcontrollers'])
         catEdit.setEditable(True)
@@ -392,7 +417,11 @@ class MyTableModel(QtCore.QAbstractTableModel):
                 
             return True
         return False
-                
+    
+    def getRowData(self, row):
+        print row
+        return self.mylist[row]
+    
     def sort(self, col, order):
         """sort table by given column number col"""
         self.emit(QtCore.SIGNAL("layoutAboutToBeChanged()"))
