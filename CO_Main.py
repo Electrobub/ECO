@@ -3,6 +3,7 @@
 #TODO
 # - Add Spinbox for QTY Editing in-place
 # - Add Coloured BG to QTY cell, if qty low - look at Qt.BackgroundColorRole (in data method)
+# - Add regexp search box on main window (look at QSortFilterProxyModel)
 
 #TODO
 # - Look what super() does. (Is it necessary in Dialog? componentDialog)
@@ -12,22 +13,37 @@
 
 # List Positions
 NAME = 0
-CATEGORY = 1
-DESCRIPTION = 2
+MANUFACTURER = 1
+CATEGORY = 2
 PACKAGE = 3
-MANUFACTURER = 5
-DATASHEET = 6
-# Position of QTY column
-QTY = 4
+DESCRIPTION = 4
+DATASHEET = 5
+COMMENTS = 6
+LOCATION = 7
+POSITION = 8
+MINQTY = 9
+DESIREDQTY = 10
+QTY = 11
 
 import sys
 from PySide import QtGui
 from PySide import QtCore
 import operator
+from Components import ComponentContainer, Component
 
-header = ['Name', 'Category', 'Description', 'Package', 'Qty', 'Manufacturer', 'Datasheet']
-data = [['2N222', 'Transistor', 'All in one package', 'Through Hole', '10', 'Texas', 'No'],
-['WOWZa', 'MOSFET', 'Does what its told', 'Through Hole', '2', 'SM', 'No']]
+header = [NAME, CATEGORY, DESCRIPTION, PACKAGE, QTY]
+#header = ['Name', 'Category', 'Description', 'Package', 'Qty', 'Manufacturer', 'Datasheet']
+#data = [['2N222', 'Transistor', 'All in one package', 'Through Hole', '10', 'Texas', 'No'],
+#['WOWZa', 'MOSFET', 'Does what its told', 'Through Hole', '2', 'SM', 'No']]
+
+dataLabels = ['Name', 'Manufacturer', 'Category', 'Package', 'Description', 'Datasheet', 'Comments', 'Location', 'Position', 'Minimum Qty.', 'Desired Qty.', 'Qty']
+#dataset = [['2N2222', 'Fairchild', 'Transistors', 'NPN General-Purpose Amplifier', 'TO-92', 'http://datasheet.com', 'Very useful chip to have on hand', 'Storage Box', 'A7', '3', '10', '5'], ['LM741', 'Texas Instruments', 'Op-Amp', 'General Purpose Op-Amp', 'PDIP-8', 'http://datasheet.com', 'Not the prettiest but does the job', 'Storage Box', 'B2', '2', '5', '5']]
+
+components = ComponentContainer('test.txt')
+
+components.addComponent(Component('LM741', 'Texas Instruments', 'Op-Amp', 'PDIP-8', 'General Purpose Op-Amp', 'http://datasheet.com', 'Not the prettiest but does the job', 'Storage Box', 'B2', '2', '5', '5'))
+components.addComponent(Component('2N2222', 'Fairchild', 'Transistors', 'TO-92', 'NPN General-Purpose Amplifier', 'http://datasheet.com', 'Very useful chip to have on hand', 'Storage Box', 'A7', '3', '10', '5'))
+    
 
 class Window(QtGui.QMainWindow):
     
@@ -93,7 +109,7 @@ class Overview(QtGui.QWidget):
         self.tableview = QtGui.QTableView()
 
         # Set the Model
-        self.tablemode = MyTableModel(data, header, self)
+        self.tablemode = MyTableModel(self)
         self.tableview.setModel(self.tablemode)
         
         #Enable Sorting
@@ -113,6 +129,7 @@ class Overview(QtGui.QWidget):
         self.addBtn.setStatusTip('Add a new component')
         self.connect(self.removeBtn, QtCore.SIGNAL("clicked()"), self.removeSelectedRows)
         self.connect(self.addBtn, QtCore.SIGNAL("clicked()"), self.updateUi)
+        #self.connect(self.addBtn, QtCore.SIGNAL("clicked()"), self.openDialog)
         self.connect(self.modifyBtn, QtCore.SIGNAL("clicked()"), self.openDialog)
         
         
@@ -189,10 +206,11 @@ class Overview(QtGui.QWidget):
             return
         
         row = indexList[0].row()
-        rowData = self.tablemode.getRowData(row)
+        #rowData = self.tablemode.getRowData(row)
+        rowData = components[row]
 
         #indexRow = self.tableview.selectionModel()
-        self.dialog = componentDialog(rowData)
+        self.dialog = componentDialog('modify', rowData)
         
         #Modal Dialog
         self.dialog.exec_()
@@ -200,10 +218,16 @@ class Overview(QtGui.QWidget):
 
 class componentDialog(QtGui.QDialog):
     
-    def __init__(self, values):
+    def __init__(self, action = 'add', component = []):
+        #action can be add or modify
         super(componentDialog, self).__init__()
-        #print data
-        print values
+        
+        self.component = component
+        if action == 'add':
+            self.component = ['', '', '', '', '', '', '', '', '', 2, 10, 0]
+            
+        print self.component
+
         nameLabel = QtGui.QLabel('Name')
         manufLabel = QtGui.QLabel('Manufacturer')
         catLabel = QtGui.QLabel('Category')
@@ -212,13 +236,13 @@ class componentDialog(QtGui.QDialog):
         dataLabel = QtGui.QLabel('Datasheet')
         commentLabel = QtGui.QLabel('Comments')
         
-        nameEdit = QtGui.QLineEdit(values[NAME])
+        nameEdit = QtGui.QLineEdit(self.component[NAME])
         manufEdit = QtGui.QComboBox()
         catEdit = QtGui.QComboBox()
         packEdit = QtGui.QComboBox()
-        descEdit = QtGui.QLineEdit(values[DESCRIPTION])
-        dataEdit = QtGui.QLineEdit()
-        commentEdit = QtGui.QTextEdit()
+        descEdit = QtGui.QLineEdit(self.component[DESCRIPTION])
+        dataEdit = QtGui.QLineEdit(self.component[DATASHEET])
+        commentEdit = QtGui.QTextEdit(self.component[COMMENTS])
         
         boxLabel = QtGui.QLabel('Storage Box')
         posLabel = QtGui.QLabel('Position')
@@ -284,6 +308,7 @@ class componentDialog(QtGui.QDialog):
         buttonWidget = QtGui.QDialogButtonBox(QtGui.QDialogButtonBox.Save | QtGui.QDialogButtonBox.Cancel)
         
         buttonWidget.rejected.connect(self.reject)
+        buttonWidget.accepted.connect(self.accept)
 
         
         groupBox = QtGui.QGroupBox('Location')
@@ -374,31 +399,85 @@ class componentDialog(QtGui.QDialog):
         #self.statusBar().showMessage('Welcome')
         
         #self.show()
+        
+        
+        #def accept(self):
+            ##class ThousandsError(Exception): pass
+            ##class DecimalError(Exception): pass
+            ##Punctuation = frozenset(" ,;:.")
+            
+            #name = nameEdit.text()
+
+            ##thousands = unicode(self.thousandsEdit.text())
+            ##decimal = unicode(self.decimalMarkerEdit.text())
+            #try:
+                #if len(decimal) == 0:
+                    #raise DecimalError, ("The decimal marker may not be "
+                                        #"empty.")
+                #if len(thousands) > 1:
+                    #raise ThousandsError, ("The thousands separator may "
+                                        #"only be empty or one character.")
+                #if len(decimal) > 1:
+                    #raise DecimalError, ("The decimal marker must be "
+                                        #"one character.")
+                #if thousands == decimal:
+                    #raise ThousandsError, ("The thousands separator and "
+                                #"the decimal marker must be different.")
+                #if thousands and thousands not in Punctuation:
+                    #raise ThousandsError, ("The thousands separator must "
+                                        #"be a punctuation symbol.")
+                #if decimal not in Punctuation:
+                    #raise DecimalError, ("The decimal marker must be a "
+                                        #"punctuation symbol.")
+            #except ThousandsError, err:
+                #QMessageBox.warning(self, "Thousands Separator Error",
+                                    #unicode(err))
+                #self.thousandsEdit.selectAll()
+                #self.thousandsEdit.setFocus()
+                #return
+            #except DecimalError, err:
+                #QMessageBox.warning(self, "Decimal Marker Error",
+                                    #unicode(err))
+                #self.decimalMarkerEdit.selectAll()
+                #self.decimalMarkerEdit.setFocus()
+                #return
+
+            #self.format["thousandsseparator"] = thousands
+            #self.format["decimalmarker"] = decimal
+            #self.format["decimalplaces"] = (
+                    #self.decimalPlacesSpinBox.value())
+            #self.format["rednegatives"] = (
+                    #self.redNegativesCheckBox.isChecked())
+            #QDialog.accept(self)
 
 
 class MyTableModel(QtCore.QAbstractTableModel):
-    def __init__(self, mylist, header, *args):
+    def __init__(self, header, *args):
         QtCore.QAbstractTableModel.__init__(self, *args)
-        self.mylist = mylist
         self.header = header
     def rowCount(self, parent):
-        return len(self.mylist)
+        return len(components)
     def columnCount(self, parent):
-        return len(self.mylist[0])
+        return len(header)
     def data(self, index, role):
         if not index.isValid():
             return None
+        #Show existing data when editing
+        elif role == QtCore.Qt.EditRole:
+            return components[index.row()][header[index.column()]]
         elif role != QtCore.Qt.DisplayRole:
             return None
         #QtGui.QBrush.setGreen()
-        return self.mylist[index.row()][index.column()]
+        return components[index.row()][header[index.column()]]
     def headerData(self, col, orientation, role):
         if orientation == QtCore.Qt.Horizontal and role == QtCore.Qt.DisplayRole:
-            return self.header[col]
+            return dataLabels[header[col]]
+            #if col < len(header):
+                #return dataLabels[header[col]]
         return None
         
     def flags(self, index):
-        if not index.isValid() or index.column() is not QTY:
+        if not index.isValid() or header[index.column()] is not QTY:
             #return QtCore.Qt.ItemIsEnabled
             return QtCore.Qt.ItemFlags(QtCore.QAbstractTableModel.flags(self, index))
         return QtCore.Qt.ItemFlags(QtCore.QAbstractTableModel.flags(self, index) | QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEditable)
@@ -406,11 +485,12 @@ class MyTableModel(QtCore.QAbstractTableModel):
     #setData must be implemented for editable model subclasses - must also emit the dataChanged signal
     #Rapid GUI Programming Pg 449 Table 14.2
     def setData(self, index, value, role=QtCore.Qt.EditRole):
-        if index.isValid() and 0 <= index.row() < len(self.mylist):
+        global components
+        if index.isValid() and 0 <= index.row() < len(components):
             column = index.column()
-            if column == QTY:
+            if header[column] == QTY:
                 try: #Make sure it's an integer
-                    self.mylist[index.row()][QTY] = int(value)
+                    components[index.row()][QTY] = int(value)
                 except:
                     return False
             self.emit(QtCore.SIGNAL("dataChanged(QModelIndex,QModelIndex)"), index, index)
@@ -419,16 +499,16 @@ class MyTableModel(QtCore.QAbstractTableModel):
         return False
     
     def getRowData(self, row):
-        print row
-        return self.mylist[row]
+        return components[row]
     
     def sort(self, col, order):
+        global components
         """sort table by given column number col"""
         self.emit(QtCore.SIGNAL("layoutAboutToBeChanged()"))
-        self.mylist = sorted(self.mylist,
+        components = sorted(components,
             key=operator.itemgetter(col))
         if order == QtCore.Qt.DescendingOrder:
-            self.mylist.reverse()
+            components.reverse()
         self.emit(QtCore.SIGNAL("layoutChanged()"))
         
         
@@ -437,14 +517,16 @@ class MyTableModel(QtCore.QAbstractTableModel):
 
     def insertRows(self, position, rows=1, index=QtCore.QModelIndex()):
         self.beginInsertRows(QtCore.QModelIndex(), position, position + rows - 1)
-        for row in range(rows):
-            self.mylist.insert(position + row, ['Extra', 'Transistor', 'All in one package', 'Through Hole', '10', 'Texas', 'No'])
+        #TODO Open Dialog Box
+        #for row in range(rows):
+            #components.addComponent(position + row, ['Extra', 'Transistor', 'All in one package', 'Through Hole', '10', 'Texas', 'No'])
         self.endInsertRows()
         return True
     
     def removeRows(self, position, rows=1, index=QtCore.QModelIndex()):
+        global components
         self.beginRemoveRows(QtCore.QModelIndex(), position, position + rows - 1)
-        self.mylist = self.mylist[:position] + self.mylist[position + rows:]
+        components = components[:position] + components[position + rows:]
         self.endRemoveRows()
         return True
 
