@@ -16,11 +16,12 @@ POSITION = 8
 MINQTY = 9
 DESIREDQTY = 10
 QTY = 11
+SUPPLIERS = 12
 
 
 class Component(object):
     
-    def __init__(self, name, manuf, cat, pack, desc, datasheet, comments, loc, pos, minqty, desqty, qty):
+    def __init__(self, name, manuf, cat, pack, desc, datasheet, comments, loc, pos, minqty, desqty, qty, suppliers):
         self.name = name
         self.manuf = manuf
         self.cat = cat
@@ -33,6 +34,7 @@ class Component(object):
         self.minqty = minqty
         self.desqty = desqty
         self.qty = qty
+        self.suppliers = suppliers
     
     def __getitem__(self, key):
         if (key==NAME):
@@ -59,6 +61,8 @@ class Component(object):
             return self.desqty
         elif (key==QTY):
             return self.qty
+        elif (key==SUPPLIERS):
+            return self.suppliers
         
     def __setitem__(self, key, value):
         if (key==NAME):
@@ -85,6 +89,14 @@ class Component(object):
             self.desqty = value
         elif (key==QTY):
             self.qty = value
+        elif (key==SUPPLIERS):
+            self.suppliers = value
+            
+    def getSupplier(self, position = 1, value = 'name'):
+        listPos = position - 1
+        if value == 'name':
+            return self.suppliers[listPos][0]
+        return self.suppliers[listPos][1]
         
 class ComponentContainer(object):
     
@@ -96,6 +108,8 @@ class ComponentContainer(object):
         self.manufacturers = set()
         self.categories = set()
         self.location = set()
+        self.packages = set()
+        self.suppliers = set()
     
     def __len__(self):
         return len(self.components)
@@ -118,49 +132,67 @@ class ComponentContainer(object):
         self.components.append(component)
         self.manufacturers.add(unicode(component.manuf))
         self.categories.add(unicode(component.cat))
+        self.location.add(unicode(component.loc))
+        self.packages.add(unicode(component.pack))
         
-        #TODO
+        for supp, key in component.suppliers:
+            self.suppliers.add(unicode(supp))
+        
+        #TODO 
         # - Figure out the insertrow of the tablemodel
+        # Works without needing it on KDE, maybe on Windows or Mac?
         print self.components
         print self.manufacturers
         
     def removeComponent(self, ident):
         del self.components[ident]
         
-    #def getLastId(self): #Methods for when storqge was with a dictionary
-        #if len(self.components) < 1:
-            #return 0
-        #else:
-            #return max(self.components.keys(), key=int)
+    def recreateSets(self):
+        self.manufacturers.clear()
+        self.categories.clear()
+        self.location.clear()
+        self.packages.clear()
+        self.suppliers.clear()
         
-    #def getComponent(self, row, column):
-        #return self.components[row][column]
+        for component in self.components:
+            self.manufacturers.add(unicode(component.manuf))
+            self.categories.add(unicode(component.cat))
+            self.location.add(unicode(component.loc))
+            self.packages.add(unicode(component.pack))
+            
+            for supp, key in component.suppliers:
+                self.suppliers.add(unicode(supp))
+        print "------------------------ Recreating"
+            
+    
+    def getManufacturers(self):
+        return self.manufacturers
+    
+    def getCategories(self):
+        return self.categories
+    
+    def getLocation(self):
+        return self.location
+    
+    def getPackages(self):
+        return self.packages
+    
+    def getSuppliers(self):
+        return self.suppliers
+    
+    def getSortedSuppliers(self):
+        sortedSuppliers = sorted(self.suppliers, key = lambda x: x[0])
+        return sortedSuppliers
         
 
 def main():
+    pass
+
+
     
-    item = Component('LM741', 'Texas Instruments', 'Op-Amp', 'General Purpose Op-Amp', 'PDIP-8', 'http://datasheet.com', 'Not the prettiest but does the job', 'Storage Box', 'B2', '2', '5', '5')
-    #['LM741', 'Texas Instruments', 'Op-Amp', 'General Purpose Op-Amp', 'PDIP-8', 'http://datasheet.com', 'Not the prettiest but does the job', 'Storage Box', 'B2', '2', '5', '5']
-    print item.manuf
-    print 'Hey'
-    print item[1]
+
     
-    #print item[2]
-    items = ComponentContainer('test.txt')
-    items.addComponent(Component('LM741', 'Texas Instruments', 'Op-Amp', 'General Purpose Op-Amp', 'PDIP-8', 'http://datasheet.com', 'Not the prettiest but does the job', 'Storage Box', 'B2', '2', '5', '5'))
-    items.addComponent(Component('2N2222', 'Fairchild', 'Transistors', 'NPN General-Purpose Amplifier', 'TO-92', 'http://datasheet.com', 'Very useful chip to have on hand', 'Storage Box', 'A7', '3', '10', '5'))
-    
-    #print items.getComponent(1,1)
-    
-    print "----------"
-    for item in items:
-        for i in range(0, QTY):
-            print i
-            print item[i]
-           
-    print items[0][10]
-    items[0][10] = 2
-    print items[0][10]
+
     
     
 if __name__ == '__main__':

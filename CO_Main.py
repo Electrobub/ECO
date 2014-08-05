@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 #TODO
+# - Dialog Box & Table Updating - when adding new component
 # - Add Spinbox for QTY Editing in-place
 # - Add Coloured BG to QTY cell, if qty low - look at Qt.BackgroundColorRole (in data method)
 # - Add regexp search box on main window (look at QSortFilterProxyModel)
@@ -24,6 +25,7 @@ POSITION = 8
 MINQTY = 9
 DESIREDQTY = 10
 QTY = 11
+SUPPLIERS = 12
 
 import sys
 from PySide import QtGui
@@ -31,7 +33,7 @@ from PySide import QtCore
 import operator
 from Components import ComponentContainer, Component
 
-header = [NAME, CATEGORY, DESCRIPTION, PACKAGE, QTY]
+header = [NAME, CATEGORY, DESCRIPTION, PACKAGE, DATASHEET, QTY]
 #header = ['Name', 'Category', 'Description', 'Package', 'Qty', 'Manufacturer', 'Datasheet']
 #data = [['2N222', 'Transistor', 'All in one package', 'Through Hole', '10', 'Texas', 'No'],
 #['WOWZa', 'MOSFET', 'Does what its told', 'Through Hole', '2', 'SM', 'No']]
@@ -41,15 +43,17 @@ dataLabels = ['Name', 'Manufacturer', 'Category', 'Package', 'Description', 'Dat
 
 components = ComponentContainer('test.txt')
 
-components.addComponent(Component('LM741', 'Texas Instruments', 'Op-Amp', 'PDIP-8', 'General Purpose Op-Amp', 'http://datasheet.com', 'Not the prettiest but does the job', 'Storage Box', 'B2', '2', '5', '5'))
-components.addComponent(Component('2N2222', 'Fairchild', 'Transistors', 'TO-92', 'NPN General-Purpose Amplifier', 'http://datasheet.com', 'Very useful chip to have on hand', 'Storage Box', 'A7', '3', '10', '5'))
-    
+components.addComponent(Component('LM741', 'Texas Instruments', 'Op-Amp', 'PDIP-8', 'General Purpose Op-Amp', 'http://datasheet.com', 'Not the prettiest but does the job', 'Storage Box', 'B2', '2', '5', '5', [['RS', 1111], ['Conrad', 2222], ['YoShop', 3333]]))
+components.addComponent(Component('2N2222', 'Fairchild', 'Transistors', 'TO-92', 'NPN General-Purpose Amplifier', 'http://datasheet.com', 'Very useful chip to have on hand', 'Storage Box', 'A7', '3', '10', '5', [['RS', 1111], ['Conrad', 2222], ['YoShop', 3333]]))
+
+#components.recreateSets()   
 
 class Window(QtGui.QMainWindow):
     
     def __init__(self):
         super(Window, self).__init__()
         
+          
         self.form_widget = Overview(self) 
         self.setCentralWidget(self.form_widget) 
         
@@ -91,7 +95,7 @@ class Overview(QtGui.QWidget):
 
     def __init__(self, parent = None):
         super(Overview, self).__init__(parent)
-
+        
         self.initUI()
 
     def initUI(self):
@@ -104,10 +108,10 @@ class Overview(QtGui.QWidget):
         qtyLabel = QtGui.QLabel('Qty')
         manufLabel = QtGui.QLabel('Manufacturer')
         dataLabel = QtGui.QLabel('Datasheet')"""
-
+        
         # Create the view
         self.tableview = QtGui.QTableView()
-
+        
         # Set the Model
         self.tablemode = MyTableModel(self)
         self.tableview.setModel(self.tablemode)
@@ -207,10 +211,10 @@ class Overview(QtGui.QWidget):
         
         row = indexList[0].row()
         #rowData = self.tablemode.getRowData(row)
-        rowData = components[row]
+        #rowData = components[row]
 
         #indexRow = self.tableview.selectionModel()
-        self.dialog = componentDialog('modify', rowData)
+        self.dialog = componentDialog('modify', row)
         
         #Modal Dialog
         self.dialog.exec_()
@@ -218,14 +222,17 @@ class Overview(QtGui.QWidget):
 
 class componentDialog(QtGui.QDialog):
     
-    def __init__(self, action = 'add', component = []):
+    def __init__(self, action = 'add', row=0):
         #action can be add or modify
         super(componentDialog, self).__init__()
         
-        self.component = component
+        
+        self.row = row
         if action == 'add':
             self.component = ['', '', '', '', '', '', '', '', '', 2, 10, 0]
-            
+        self.component = components[self.row]    
+        
+        
         print self.component
 
         nameLabel = QtGui.QLabel('Name')
@@ -236,73 +243,89 @@ class componentDialog(QtGui.QDialog):
         dataLabel = QtGui.QLabel('Datasheet')
         commentLabel = QtGui.QLabel('Comments')
         
-        nameEdit = QtGui.QLineEdit(self.component[NAME])
-        manufEdit = QtGui.QComboBox()
-        catEdit = QtGui.QComboBox()
-        packEdit = QtGui.QComboBox()
-        descEdit = QtGui.QLineEdit(self.component[DESCRIPTION])
-        dataEdit = QtGui.QLineEdit(self.component[DATASHEET])
-        commentEdit = QtGui.QTextEdit(self.component[COMMENTS])
+        self.nameEdit = QtGui.QLineEdit(self.component[NAME])
+        self.manufEdit = QtGui.QComboBox()
+        self.catEdit = QtGui.QComboBox()
+        self.packEdit = QtGui.QComboBox()
+        self.descEdit = QtGui.QLineEdit(self.component[DESCRIPTION])
+        self.dataEdit = QtGui.QLineEdit(self.component[DATASHEET])
+        self.commentEdit = QtGui.QTextEdit(self.component[COMMENTS])
         
         boxLabel = QtGui.QLabel('Storage Box')
         posLabel = QtGui.QLabel('Position')
         
-        boxEdit = QtGui.QComboBox()
-        posEdit = QtGui.QLineEdit()
+        self.boxEdit = QtGui.QComboBox()
+        self.posEdit = QtGui.QLineEdit()
         
         minQtyLabel = QtGui.QLabel('Min. Qty Alert')
         maxQtyLabel = QtGui.QLabel('Desired Max Qty')
         qtyLabel = QtGui.QLabel('Qty')
         
-        minQtyEdit = QtGui.QSpinBox()
-        maxQtyEdit = QtGui.QSpinBox()
-        qtyEdit = QtGui.QSpinBox()
+        self.minQtyEdit = QtGui.QSpinBox()
+        self.maxQtyEdit = QtGui.QSpinBox()
+        self.qtyEdit = QtGui.QSpinBox()
         
 
         supplier1Label = QtGui.QLabel('Supplier 1')
         key1Label = QtGui.QLabel('KeyCode')
         
-        supplier1Edit = QtGui.QComboBox()
-        key1Edit = QtGui.QLineEdit()
+        self.supplier1Edit = QtGui.QComboBox()
+        self.key1Edit = QtGui.QLineEdit(unicode(self.component.getSupplier(1, 'key')))
         
         supplier2Label = QtGui.QLabel('Supplier 2')
         key2Label = QtGui.QLabel('KeyCode')
         
-        supplier2Edit = QtGui.QComboBox()
-        key2Edit = QtGui.QLineEdit()
+        self.supplier2Edit = QtGui.QComboBox()
+        self.key2Edit = QtGui.QLineEdit(unicode(self.component.getSupplier(2, 'key')))
         
         supplier3Label = QtGui.QLabel('Supplier 3')
         key3Label = QtGui.QLabel('KeyCode')
         
-        supplier3Edit = QtGui.QComboBox()
-        key3Edit = QtGui.QLineEdit()
+        self.supplier3Edit = QtGui.QComboBox()
+        self.key3Edit = QtGui.QLineEdit(unicode(self.component.getSupplier(3, 'key')))
 
+        manufList = sorted(components.getManufacturers())
+        self.manufEdit.addItems(manufList)
+        self.manufEdit.setEditable(True)
+        self.manufEdit.setCurrentIndex(manufList.index(self.component[MANUFACTURER]))
         
-        manufEdit.addItems(['Texas Instruments','SF','Avr','Maxxim'])
-        manufEdit.setEditable(True)
-        #TODO Set proper index
-        manufEdit.setCurrentIndex(0)
+        catList = sorted(components.getCategories())
+        self.catEdit.addItems(catList)
+        self.catEdit.setEditable(True)
+        self.catEdit.setCurrentIndex(catList.index(self.component[CATEGORY]))
         
-        catEdit.addItems(['Linear Regulators', 'Microcontrollers'])
-        catEdit.setEditable(True)
+        packList = sorted(components.getPackages())
+        self.packEdit.addItems(packList)
+        self.packEdit.setEditable(True)
+        self.packEdit.setCurrentIndex(packList.index(self.component[PACKAGE]))
         
-        packEdit.addItems(['PDIP-12','PDIP-8'])
-        packEdit.setEditable(True)
+        locList = sorted(components.getLocation())
+        self.boxEdit.addItems(locList)
+        self.boxEdit.setEditable(True)
+        self.boxEdit.setCurrentIndex(locList.index(self.component[LOCATION]))
         
-        boxEdit.addItems(['Briefcase', 'Drawers-1', 'Drawers-2'])
-        boxEdit.setEditable(True)
+        #suppRefList = sorted(components.getSuppliers(), key = lambda x: x[0])
+        suppList = sorted(components.getSuppliers())
+        #print suppRefList
+        #suppList = [x[0] for x in suppRefList]
+        #self.supplier1Edit.addItems(['RS Components','Element14','Jaycar','Conrad'])
+        self.supplier1Edit.addItems(suppList)
+        self.supplier1Edit.setEditable(True)
+        self.supplier1Edit.setCurrentIndex(suppList.index(self.component.getSupplier(1, 'name')))
+        #self.supplier1Edit.setCurrentIndex(suppList.index(self.component[LOCATION]))
         
-        supplier1Edit.addItems(['RS Components','Element14','Jaycar','Conrad'])
-        supplier1Edit.setEditable(True)
+        self.supplier2Edit.addItems(suppList)
+        self.supplier2Edit.setEditable(True)
+        self.supplier2Edit.setCurrentIndex(suppList.index(self.component.getSupplier(2, 'name')))
         
-        supplier2Edit.addItems(['', 'RS Components','Element14','Jaycar','Conrad'])
-        supplier2Edit.setEditable(True)
+        self.supplier3Edit.addItems(suppList)
+        self.supplier3Edit.setEditable(True)
+        self.supplier3Edit.setCurrentIndex(suppList.index(self.component.getSupplier(3, 'name')))
         
-        supplier3Edit.addItems(['', 'RS Components','Element14','Jaycar','Conrad'])
-        supplier3Edit.setEditable(True)
-        
-        minQtyEdit.setMinimum(-1)
-        maxQtyEdit.setValue(5)
+        self.minQtyEdit.setMinimum(-1)
+        self.minQtyEdit.setValue(int(self.component[MINQTY]))
+        self.maxQtyEdit.setValue(int(self.component[DESIREDQTY]))
+        self.qtyEdit.setValue(int(self.component[QTY]))
         
 
         buttonWidget = QtGui.QDialogButtonBox(QtGui.QDialogButtonBox.Save | QtGui.QDialogButtonBox.Cancel)
@@ -324,21 +347,21 @@ class componentDialog(QtGui.QDialog):
         grid.addWidget(dataLabel, 5, 0)
         grid.addWidget(commentLabel, 6, 0)
         
-        grid.addWidget(nameEdit, 0, 1)
-        grid.addWidget(manufEdit, 1, 1)
-        grid.addWidget(catEdit, 2, 1)
-        grid.addWidget(packEdit, 3, 1)
-        grid.addWidget(descEdit, 4, 1)
-        grid.addWidget(dataEdit, 5, 1)
-        grid.addWidget(commentEdit, 6, 1, 1, 1)
+        grid.addWidget(self.nameEdit, 0, 1)
+        grid.addWidget(self.manufEdit, 1, 1)
+        grid.addWidget(self.catEdit, 2, 1)
+        grid.addWidget(self.packEdit, 3, 1)
+        grid.addWidget(self.descEdit, 4, 1)
+        grid.addWidget(self.dataEdit, 5, 1)
+        grid.addWidget(self.commentEdit, 6, 1, 1, 1)
 
         
         locatGrid = QtGui.QGridLayout()
         locatGrid.addWidget(boxLabel, 0, 0)
         locatGrid.addWidget(posLabel, 1, 0)
         
-        locatGrid.addWidget(boxEdit, 0, 1)
-        locatGrid.addWidget(posEdit, 1, 1)
+        locatGrid.addWidget(self.boxEdit, 0, 1)
+        locatGrid.addWidget(self.posEdit, 1, 1)
         locatGrid.setRowStretch(2, 1)
         
         qtyGrid = QtGui.QGridLayout()
@@ -347,26 +370,31 @@ class componentDialog(QtGui.QDialog):
         qtyGrid.addWidget(qtyLabel, 3, 0)
         qtyGrid.setRowStretch(4, 1)
         
-        qtyGrid.addWidget(minQtyEdit, 0, 1)
-        qtyGrid.addWidget(maxQtyEdit, 1, 1)
+        qtyGrid.addWidget(self.minQtyEdit, 0, 1)
+        qtyGrid.addWidget(self.maxQtyEdit, 1, 1)
         qtyGrid.setRowMinimumHeight(2, 20)
-        qtyGrid.addWidget(qtyEdit, 3, 1)
+        qtyGrid.addWidget(self.qtyEdit, 3, 1)
+        
+        #x, y = 0, 0
+        #for supplierName, refCode in suppliers:
+            #reorderGrid.addwidget(supplierName, y, x)
+            #reorderGrid.addWidget( #add supplierEdit fn
         
         reorderGrid = QtGui.QGridLayout()
         reorderGrid.addWidget(supplier1Label, 0, 0)
-        reorderGrid.addWidget(supplier1Edit, 0, 1)
+        reorderGrid.addWidget(self.supplier1Edit, 0, 1)
         reorderGrid.addWidget(key1Label, 0, 2)
-        reorderGrid.addWidget(key1Edit, 0, 3)
+        reorderGrid.addWidget(self.key1Edit, 0, 3)
         
         reorderGrid.addWidget(supplier2Label, 1, 0)
-        reorderGrid.addWidget(supplier2Edit, 1, 1)
+        reorderGrid.addWidget(self.supplier2Edit, 1, 1)
         reorderGrid.addWidget(key2Label, 1, 2)
-        reorderGrid.addWidget(key2Edit, 1, 3)
+        reorderGrid.addWidget(self.key2Edit, 1, 3)
         
         reorderGrid.addWidget(supplier3Label, 2, 0)
-        reorderGrid.addWidget(supplier3Edit, 2, 1)
+        reorderGrid.addWidget(self.supplier3Edit, 2, 1)
         reorderGrid.addWidget(key3Label, 2, 2)
-        reorderGrid.addWidget(key3Edit, 2, 3)
+        reorderGrid.addWidget(self.key3Edit, 2, 3)
         
         
         groupBox.setLayout(locatGrid)
@@ -380,7 +408,7 @@ class componentDialog(QtGui.QDialog):
         
         commentLayout = QtGui.QHBoxLayout()
         commentLayout.addWidget(commentLabel)
-        commentLayout.addWidget(commentEdit)
+        commentLayout.addWidget(self.commentEdit)
         
         
         
@@ -401,54 +429,64 @@ class componentDialog(QtGui.QDialog):
         #self.show()
         
         
-        #def accept(self):
-            ##class ThousandsError(Exception): pass
-            ##class DecimalError(Exception): pass
-            ##Punctuation = frozenset(" ,;:.")
+    def accept(self):
+        #global components
+        class NameError(Exception): pass
+        class QtyError(Exception): pass
+        name = unicode(self.nameEdit.text())
+        manuf = unicode(self.manufEdit.currentText())
+        cat = unicode(self.catEdit.currentText())
+        pack = unicode(self.packEdit.currentText())
+        desc = unicode(self.descEdit.text())
+        data = unicode(self.dataEdit.text())
+        comments = unicode(self.commentEdit.toPlainText())
+        loc = unicode(self.boxEdit.currentText())
+        pos = unicode(self.posEdit.text())
+        minqty = self.minQtyEdit.value()
+        desqty = self.maxQtyEdit.value()
+        qty = self.qtyEdit.value()
+        supp1 = [self.supplier1Edit.currentText(), self.key1Edit.text()]
+        supp2 = [self.supplier2Edit.currentText(), self.key2Edit.text()]
+        supp3 = [self.supplier3Edit.currentText(), self.key3Edit.text()]
+        
+        try:
+            if len(name) == 0:
+                raise NameError, ("The name can not be left empty.")
             
-            #name = nameEdit.text()
+            if minqty > desqty:
+                raise QtyError, ("Minimum Qty can not be greater than the desired Qty")
+            
+        except NameError, e:
+            QtGui.QMessageBox.warning(self, "Name Error", unicode(e))
+            self.nameEdit.selectAll()
+            self.nameEdit.setFocus()
+            return
+        
+        except QtyError, e:
+            QtGui.QMessageBox.warning(self, "Minimum Qty Error", unicode(e))
+            self.minQtyEdit.selectAll()
+            self.minQtyEdit.setFocus()
+            return
+        
+        components[self.row][NAME] = name
+        components[self.row][MANUFACTURER] = manuf
+        components[self.row][CATEGORY] = cat
+        components[self.row][PACKAGE] = pack
+        components[self.row][DESCRIPTION] = desc
+        components[self.row][DATASHEET] = data
+        components[self.row][COMMENTS] = comments
+        components[self.row][LOCATION] = loc
+        components[self.row][POSITION] = pos
+        components[self.row][MINQTY] = minqty
+        components[self.row][DESIREDQTY] = desqty
+        components[self.row][QTY] = qty
+        components[self.row][SUPPLIERS] = [supp1, supp2, supp3]
+        
+        components.recreateSets()
+        print "Manuf sets:", sorted(components.getManufacturers())
+        
+        QtGui.QDialog.accept(self)
 
-            ##thousands = unicode(self.thousandsEdit.text())
-            ##decimal = unicode(self.decimalMarkerEdit.text())
-            #try:
-                #if len(decimal) == 0:
-                    #raise DecimalError, ("The decimal marker may not be "
-                                        #"empty.")
-                #if len(thousands) > 1:
-                    #raise ThousandsError, ("The thousands separator may "
-                                        #"only be empty or one character.")
-                #if len(decimal) > 1:
-                    #raise DecimalError, ("The decimal marker must be "
-                                        #"one character.")
-                #if thousands == decimal:
-                    #raise ThousandsError, ("The thousands separator and "
-                                #"the decimal marker must be different.")
-                #if thousands and thousands not in Punctuation:
-                    #raise ThousandsError, ("The thousands separator must "
-                                        #"be a punctuation symbol.")
-                #if decimal not in Punctuation:
-                    #raise DecimalError, ("The decimal marker must be a "
-                                        #"punctuation symbol.")
-            #except ThousandsError, err:
-                #QMessageBox.warning(self, "Thousands Separator Error",
-                                    #unicode(err))
-                #self.thousandsEdit.selectAll()
-                #self.thousandsEdit.setFocus()
-                #return
-            #except DecimalError, err:
-                #QMessageBox.warning(self, "Decimal Marker Error",
-                                    #unicode(err))
-                #self.decimalMarkerEdit.selectAll()
-                #self.decimalMarkerEdit.setFocus()
-                #return
-
-            #self.format["thousandsseparator"] = thousands
-            #self.format["decimalmarker"] = decimal
-            #self.format["decimalplaces"] = (
-                    #self.decimalPlacesSpinBox.value())
-            #self.format["rednegatives"] = (
-                    #self.redNegativesCheckBox.isChecked())
-            #QDialog.accept(self)
 
 
 class MyTableModel(QtCore.QAbstractTableModel):
@@ -505,10 +543,10 @@ class MyTableModel(QtCore.QAbstractTableModel):
         global components
         """sort table by given column number col"""
         self.emit(QtCore.SIGNAL("layoutAboutToBeChanged()"))
-        components = sorted(components,
+        componentsList = sorted(components,
             key=operator.itemgetter(col))
         if order == QtCore.Qt.DescendingOrder:
-            components.reverse()
+            componentsList.reverse()
         self.emit(QtCore.SIGNAL("layoutChanged()"))
         
         
