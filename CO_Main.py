@@ -255,7 +255,7 @@ class componentDialog(QtGui.QDialog):
         posLabel = QtGui.QLabel('Position')
         
         self.boxEdit = QtGui.QComboBox()
-        self.posEdit = QtGui.QLineEdit()
+        self.posEdit = QtGui.QLineEdit(self.component[POSITION])
         
         minQtyLabel = QtGui.QLabel('Min. Qty Alert')
         maxQtyLabel = QtGui.QLabel('Desired Max Qty')
