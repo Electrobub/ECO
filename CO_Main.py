@@ -86,6 +86,7 @@ class Window(QtGui.QMainWindow):
         fileMenu = menubar.addMenu('&File')
         fileMenu.addAction(openAction)
         fileMenu.addAction(saveAction)
+        fileMenu.addSeparator()
         fileMenu.addAction(addAction)
         fileMenu.addAction(modifyAction)
         
