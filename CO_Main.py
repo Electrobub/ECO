@@ -41,10 +41,11 @@ dataLabels = ['Name', 'Manufacturer', 'Category', 'Package', 'Description', 'Dat
 
 components = ComponentContainer('test.txt')
 
-components.addComponent(Component('LM741', 'Texas Instruments', 'Op-Amp', 'PDIP-8', 'General Purpose Op-Amp', 'http://datasheet.com', 'Not the prettiest but does the job', 'Storage Box', 'B2', '2', '5', '5', [['RS', 1111], ['Conrad', 2222], ['YoShop', 3333]]))
-components.addComponent(Component('2N2222', 'Fairchild', 'Transistors', 'TO-92', 'NPN General-Purpose Amplifier', 'http://datasheet.com', 'Very useful chip to have on hand', 'Storage Box', 'A7', '3', '10', '5', [['RS', 1111], ['Conrad', 2222], ['YoShop', 3333]]))
+#components.addComponent(Component('LM741', 'Texas Instruments', 'Op-Amp', 'PDIP-8', 'General Purpose Op-Amp', 'http://datasheet.com', 'Not the prettiest but does the job', 'Storage Box', 'B2', '2', '5', '5', [['RS', 1111], ['Conrad', 2222], ['YoShop', 3333]]))
+#components.addComponent(Component('2N2222', 'Fairchild', 'Transistors', 'TO-92', 'NPN General-Purpose Amplifier', 'http://datasheet.com', 'Very useful chip to have on hand', 'Storage Box', 'A7', '3', '10', '5', [['RS', 1111], ['Conrad', 2222], ['YoShop', 3333]]))
 
 #components.recreateSets()   
+components.loadCsvFile("components.txt")
 
 class Window(QtGui.QMainWindow):
     
@@ -52,14 +53,23 @@ class Window(QtGui.QMainWindow):
         super(Window, self).__init__()
         
           
-        self.form_widget = Overview(self) 
-        self.setCentralWidget(self.form_widget) 
+        self.formWidget = Overview(self) 
+        self.setCentralWidget(self.formWidget) 
         
         #Actions
+        openAction = QtGui.QAction('&Open', self)
+        openAction.setShortcut('Ctrl+O')
+        openAction.setStatusTip('Open File')
+        
+        saveAction = QtGui.QAction('&Save', self)
+        saveAction.setShortcut('Ctrl+S')
+        saveAction.setStatusTip('Save File')
+        #self.connect(saveAction, QtCore.SIGNAL("clicked()"), components.saveCsvFile)
+        saveAction.connect(QtCore.SIGNAL("triggered()"), components.saveCsvFile)
+
         addAction = QtGui.QAction('&Add', self)
         addAction.setShortcut('Ctrl+A')
         addAction.setStatusTip('Add a new component')
-        #addAction.triggered.connect()
 
         modifyAction = QtGui.QAction('&Modify', self)
         modifyAction.setShortcut('Ctrl+M')
@@ -74,6 +84,8 @@ class Window(QtGui.QMainWindow):
         #Menubar
         menubar = self.menuBar()
         fileMenu = menubar.addMenu('&File')
+        fileMenu.addAction(openAction)
+        fileMenu.addAction(saveAction)
         fileMenu.addAction(addAction)
         fileMenu.addAction(modifyAction)
         
