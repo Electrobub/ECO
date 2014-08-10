@@ -1,9 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 #TODO
-# - Dialog Box & Table Updating - when adding new component
-# - Add Spinbox for QTY Editing in-place
-# - Add Coloured BG to QTY cell, if qty low - look at Qt.BackgroundColorRole (in data method)
+# - Fix Table Sorting (implement __lt__ in ComponentClass? Or other that is required)
 # - Add regexp search box on main window (look at QSortFilterProxyModel)
 
 #TODO
@@ -87,6 +85,7 @@ class Window(QtGui.QMainWindow):
         self.setGeometry(300, 300, 850, 550)
         self.setWindowTitle('Electronic Components Organiser')
         self.statusBar().showMessage('Welcome')
+        #self.move(200,40)
         
         self.show()
         
@@ -111,10 +110,12 @@ class Overview(QtGui.QWidget):
         
         # Create the view
         self.tableview = QtGui.QTableView()
+        self.delegate = qtyEditDelegate()
         
         # Set the Model
         self.tablemode = MyTableModel(self)
         self.tableview.setModel(self.tablemode)
+        self.tableview.setItemDelegate(self.delegate)
         
         #Enable Sorting
         self.tableview.setSortingEnabled(True)
@@ -124,6 +125,7 @@ class Overview(QtGui.QWidget):
         
         #Resize Mode
         self.tableview.horizontalHeader().setResizeMode(QtGui.QHeaderView.Stretch)
+        
 
         self.removeBtn = QtGui.QPushButton('Remove', self)
         self.removeBtn.setStatusTip('Remove Selected Component')
@@ -132,9 +134,11 @@ class Overview(QtGui.QWidget):
         self.addBtn = QtGui.QPushButton('Add', self)
         self.addBtn.setStatusTip('Add a new component')
         self.connect(self.removeBtn, QtCore.SIGNAL("clicked()"), self.removeSelectedRows)
-        self.connect(self.addBtn, QtCore.SIGNAL("clicked()"), self.updateUi)
+        self.connect(self.addBtn, QtCore.SIGNAL("clicked()"), self.openAddDialog)
         #self.connect(self.addBtn, QtCore.SIGNAL("clicked()"), self.openDialog)
         self.connect(self.modifyBtn, QtCore.SIGNAL("clicked()"), self.openDialog)
+        
+        self.connect(self.tableview, QtCore.SIGNAL("doubleClicked(const QModelIndex &)"), self.doubleClick)
         
         
 
@@ -214,24 +218,41 @@ class Overview(QtGui.QWidget):
         #rowData = components[row]
 
         #indexRow = self.tableview.selectionModel()
-        self.dialog = componentDialog('modify', row)
-        
+        self.dialog = componentDialog(self, 'modify', row)
+        #self.dialog.move(100,90)
         #Modal Dialog
         self.dialog.exec_()
-
+        
+    def openAddDialog(self):
+        self.dialog = componentDialog(self, 'add')
+        self.dialog.exec_()
+        
+    def doubleClick(self, index):   
+        if header[index.column()] == DATASHEET:
+            self.openDatasheet(index)
+            return
+        elif header[index.column()] is not QTY:
+            self.openDialog()
+            return
+            
+    def openDatasheet(self, index):
+        QtGui.QMessageBox.information(self, "Datasheet", "Here is your "+str(components[index.row()].name)+" datasheet, sir")
 
 class componentDialog(QtGui.QDialog):
     
-    def __init__(self, action = 'add', row=0):
+    def __init__(self, parent = None, action = 'add', row=-1):
         #action can be add or modify
-        super(componentDialog, self).__init__()
+        super(componentDialog, self).__init__(parent)
+        #self.move(400,30)
         
-        
+        self.parent = parent
         self.row = row
-        if action == 'add':
-            self.component = ['', '', '', '', '', '', '', '', '', 2, 10, 0]
-        self.component = components[self.row]    
+        self.action = action
         
+        if self.action == 'add':
+            self.component = Component('', '', '', '', '', '', '', '', '', 2, 10, 0, [['',0], ['',0], ['',0]])
+        elif self.action == 'modify':
+            self.component = components[self.row]
         
         print self.component
 
@@ -306,6 +327,7 @@ class componentDialog(QtGui.QDialog):
         
         #suppRefList = sorted(components.getSuppliers(), key = lambda x: x[0])
         suppList = sorted(components.getSuppliers())
+        print suppList
         #print suppRefList
         #suppList = [x[0] for x in suppRefList]
         #self.supplier1Edit.addItems(['RS Components','Element14','Jaycar','Conrad'])
@@ -448,7 +470,7 @@ class componentDialog(QtGui.QDialog):
         supp1 = [self.supplier1Edit.currentText(), self.key1Edit.text()]
         supp2 = [self.supplier2Edit.currentText(), self.key2Edit.text()]
         supp3 = [self.supplier3Edit.currentText(), self.key3Edit.text()]
-        
+            
         try:
             if len(name) == 0:
                 raise NameError, ("The name can not be left empty.")
@@ -468,6 +490,11 @@ class componentDialog(QtGui.QDialog):
             self.minQtyEdit.setFocus()
             return
         
+        if  self.action == 'add':
+            print "Parent:", self.parent
+            self.parent.tablemode.insertRows(self.row, 1)
+            components.addComponent(self.component)
+        
         components[self.row][NAME] = name
         components[self.row][MANUFACTURER] = manuf
         components[self.row][CATEGORY] = cat
@@ -482,6 +509,9 @@ class componentDialog(QtGui.QDialog):
         components[self.row][QTY] = qty
         components[self.row][SUPPLIERS] = [supp1, supp2, supp3]
         
+        if self.action == 'add':
+            self.parent.tablemode.endInsertRows()
+            
         components.recreateSets()
         print "Manuf sets:", sorted(components.getManufacturers())
         
@@ -503,8 +533,24 @@ class MyTableModel(QtCore.QAbstractTableModel):
         #Show existing data when editing
         elif role == QtCore.Qt.EditRole:
             return components[index.row()][header[index.column()]]
+        elif role == QtCore.Qt.TextColorRole and header[index.column()] == QTY:
+            qty = int(components[index.row()][header[index.column()]])
+            minQty = int(components[index.row()][MINQTY])
+            if qty <= minQty:
+                return QtGui.QColor(QtCore.Qt.red)
+            else:
+                return QtGui.QColor(QtCore.Qt.black)
+        elif role == QtCore.Qt.BackgroundColorRole and header[index.column()] == QTY:
+            qty = int(components[index.row()][header[index.column()]])
+            minQty = int(components[index.row()][MINQTY])
+            if qty <= minQty:
+                return QtGui.QColor(255,232,232)
+            else:
+                return QtGui.QColor(255,255,255)
+        elif role == QtCore.Qt.TextAlignmentRole and header[index.column()] == QTY:
+            return int(QtCore.Qt.AlignRight|QtCore.Qt.AlignVCenter)
         elif role != QtCore.Qt.DisplayRole:
-            return None
+            return None     
         #QtGui.QBrush.setGreen()
         return components[index.row()][header[index.column()]]
     def headerData(self, col, orientation, role):
@@ -541,14 +587,17 @@ class MyTableModel(QtCore.QAbstractTableModel):
     
     def sort(self, col, order):
         global components
+        print components
         """sort table by given column number col"""
         self.emit(QtCore.SIGNAL("layoutAboutToBeChanged()"))
-        componentsList = sorted(components,
-            key=operator.itemgetter(col))
+        #componentsList = sorted(components, key=operator.itemgetter(col))
+        componentsList = sorted(components, key=lambda component: component.name)
+        print "Col:", col
+        print componentsList
+        print components
         if order == QtCore.Qt.DescendingOrder:
             componentsList.reverse()
         self.emit(QtCore.SIGNAL("layoutChanged()"))
-        
         
     #def insertRow(self, row, parent):
     #    return self.insertRows(row, 1, parent)
@@ -558,21 +607,40 @@ class MyTableModel(QtCore.QAbstractTableModel):
         #TODO Open Dialog Box
         #for row in range(rows):
             #components.addComponent(position + row, ['Extra', 'Transistor', 'All in one package', 'Through Hole', '10', 'Texas', 'No'])
-        self.endInsertRows()
+        #self.endInsertRows()
         return True
     
     def removeRows(self, position, rows=1, index=QtCore.QModelIndex()):
         global components
         self.beginRemoveRows(QtCore.QModelIndex(), position, position + rows - 1)
-        components = components[:position] + components[position + rows:]
+        #components = components[:position] + components[position + rows:]
+        components.removeComponents(position, rows)
         self.endRemoveRows()
         return True
+
+class qtyEditDelegate(QtGui.QStyledItemDelegate):
+    def createEditor(self, parent, option, index):
+        sbox = QtGui.QSpinBox(parent)
+        sbox.setRange(0, 99999)
+        return sbox
+    
+    def setEditorData(self, editor, index):
+        itemVar = index.data(QtCore.Qt.DisplayRole)
+        #itemStr = itemVar.toPyObject()
+        itemInt = int(itemVar)
+        editor.setValue(itemInt)
+        
+    def setModelData(self, editor, model, index):
+        dataInt = editor.value()
+        #dataVar = QtCore.QVariant(dataInt)
+        model.setData(index,dataInt)
 
 def main():
 
     app = QtGui.QApplication(sys.argv)
     ex = Window()
     sys.exit(app.exec_())
+    print components
 
 if __name__ == '__main__':
     main()
