@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 #TODO
+# - Get relative filename for PDF datasheet
 # - Add Same Name Check
 # - Add Storage Check - with component dialog (to make sure other component is not in that spot)
 # - Fix Table Sorting (implement __lt__ in ComponentClass? Or other that is required)
@@ -303,6 +304,14 @@ class componentDialog(QtGui.QDialog):
         self.dataEdit = QtGui.QLineEdit(self.component[DATASHEET])
         self.commentEdit = QtGui.QTextEdit(self.component[COMMENTS])
         
+        self.dataFileBtn = QtGui.QPushButton("Browse")
+        self.dataUrlBtn = QtGui.QPushButton("URL")
+        self.dataBtnBox = QtGui.QDialogButtonBox()
+        self.dataBtnBox.addButton(self.dataFileBtn, QtGui.QDialogButtonBox.ActionRole)
+        self.dataBtnBox.addButton(self.dataUrlBtn, QtGui.QDialogButtonBox.ActionRole)
+        
+        self.connect(self.dataFileBtn, QtCore.SIGNAL('clicked()'), self.selectFile)
+        
         boxLabel = QtGui.QLabel('Storage Box')
         posLabel = QtGui.QLabel('Position')
         
@@ -391,6 +400,7 @@ class componentDialog(QtGui.QDialog):
         reorderBox = QtGui.QGroupBox('Reordering')
         qtyBox = QtGui.QGroupBox('Stock')
         
+        dataGrid = QtGui.QGridLayout()
         grid = QtGui.QGridLayout()
         grid.addWidget(nameLabel, 0, 0)
         grid.addWidget(manufLabel, 1, 0)
@@ -398,7 +408,7 @@ class componentDialog(QtGui.QDialog):
         grid.addWidget(packLabel, 3, 0)
         grid.addWidget(descLabel, 4, 0)
         grid.addWidget(dataLabel, 5, 0)
-        grid.addWidget(commentLabel, 6, 0)
+        grid.addWidget(commentLabel, 7, 0)
         
         grid.addWidget(self.nameEdit, 0, 1)
         grid.addWidget(self.manufEdit, 1, 1)
@@ -406,7 +416,8 @@ class componentDialog(QtGui.QDialog):
         grid.addWidget(self.packEdit, 3, 1)
         grid.addWidget(self.descEdit, 4, 1)
         grid.addWidget(self.dataEdit, 5, 1)
-        grid.addWidget(self.commentEdit, 6, 1, 1, 1)
+        grid.addWidget(self.dataBtnBox, 6, 1)
+        grid.addWidget(self.commentEdit, 7, 1, 1, 1)
 
         
         locatGrid = QtGui.QGridLayout()
@@ -455,9 +466,9 @@ class componentDialog(QtGui.QDialog):
         qtyBox.setLayout(qtyGrid)
         
         grid.addWidget(groupBox, 0, 2, 5, 1)
-        grid.addWidget(reorderBox, 7, 0, 3, 2)
-        grid.addWidget(qtyBox, 6, 2, 3, 1)
-        grid.addWidget(buttonWidget, 9, 2, 1, 1)
+        grid.addWidget(reorderBox, 8, 0, 3, 2)
+        grid.addWidget(qtyBox, 7, 2, 3, 1)
+        grid.addWidget(buttonWidget, 10, 2, 1, 1)
         
         commentLayout = QtGui.QHBoxLayout()
         commentLayout.addWidget(commentLabel)
@@ -480,6 +491,11 @@ class componentDialog(QtGui.QDialog):
         #self.statusBar().showMessage('Welcome')
         
         #self.show()
+    
+    def selectFile(self):
+        file = QtGui.QFileDialog.getOpenFileName(self, "Open Datasheet", QtCore.QDir.currentPath(), "PDF(*.pdf)")
+        self.dataEdit.setText(file[0])
+        
         
         
     def accept(self):
