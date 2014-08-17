@@ -1,6 +1,8 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 #TODO
+# - Add Same Name Check
+# - Add Storage Check - with component dialog (to make sure other component is not in that spot)
 # - Fix Table Sorting (implement __lt__ in ComponentClass? Or other that is required)
 # - Add regexp search box on main window (look at QSortFilterProxyModel)
 
@@ -8,7 +10,6 @@
 # - Look what super() does. (Is it necessary in Dialog? componentDialog)
 #or is it possible to call the int like QtGui.QDialog.__init__(self, parent)
 # - In componentDialog figure out the proper passing of parent, so the dialog gets centred correctly
-# - look into setSelectionMode(SingleSelection) - To select a row at a time?
 
 # List Positions
 NAME = 0
@@ -39,7 +40,7 @@ header = [NAME, CATEGORY, DESCRIPTION, PACKAGE, DATASHEET, QTY]
 dataLabels = ['Name', 'Manufacturer', 'Category', 'Package', 'Description', 'Datasheet', 'Comments', 'Location', 'Position', 'Minimum Qty.', 'Desired Qty.', 'Qty']
 #dataset = [['2N2222', 'Fairchild', 'Transistors', 'NPN General-Purpose Amplifier', 'TO-92', 'http://datasheet.com', 'Very useful chip to have on hand', 'Storage Box', 'A7', '3', '10', '5'], ['LM741', 'Texas Instruments', 'Op-Amp', 'General Purpose Op-Amp', 'PDIP-8', 'http://datasheet.com', 'Not the prettiest but does the job', 'Storage Box', 'B2', '2', '5', '5']]
 
-components = ComponentContainer('test.txt')
+components = ComponentContainer('components.txt')
 
 #components.addComponent(Component('LM741', 'Texas Instruments', 'Op-Amp', 'PDIP-8', 'General Purpose Op-Amp', 'http://datasheet.com', 'Not the prettiest but does the job', 'Storage Box', 'B2', '2', '5', '5', [['RS', 1111], ['Conrad', 2222], ['YoShop', 3333]]))
 #components.addComponent(Component('2N2222', 'Fairchild', 'Transistors', 'TO-92', 'NPN General-Purpose Amplifier', 'http://datasheet.com', 'Very useful chip to have on hand', 'Storage Box', 'A7', '3', '10', '5', [['RS', 1111], ['Conrad', 2222], ['YoShop', 3333]]))
@@ -65,19 +66,22 @@ class Window(QtGui.QMainWindow):
         saveAction.setShortcut('Ctrl+S')
         saveAction.setStatusTip('Save File')
         #self.connect(saveAction, QtCore.SIGNAL("clicked()"), components.saveCsvFile)
-        saveAction.connect(QtCore.SIGNAL("triggered()"), components.saveCsvFile)
+        saveAction.connect(QtCore.SIGNAL("triggered()"), self.formWidget.saveDialog)
 
         addAction = QtGui.QAction('&Add', self)
         addAction.setShortcut('Ctrl+A')
         addAction.setStatusTip('Add a new component')
+        addAction.connect(QtCore.SIGNAL("triggered()"), self.formWidget.openAddDialog)
 
         modifyAction = QtGui.QAction('&Modify', self)
         modifyAction.setShortcut('Ctrl+M')
         modifyAction.setStatusTip('Modify selected component')
+        modifyAction.connect(QtCore.SIGNAL("triggered()"), self.formWidget.openModifyDialog)
         #addAction.triggered.connect()
         
         aboutAction = QtGui.QAction('&About', self)
         aboutAction.setStatusTip('About Electronic Components Organiser')
+        aboutAction.connect(QtCore.SIGNAL("triggered()"), self.aboutDialog)
         #addAction.triggered.connect()
         
 
@@ -101,6 +105,9 @@ class Window(QtGui.QMainWindow):
         #self.move(200,40)
         
         self.show()
+        
+    def aboutDialog(self):
+        QtGui.QMessageBox.information(self, "About", "Components Organiser was made when I could not find a simple program with the options I was looking for to help me organise my SMD components.\n\nThis program was made using Python & QT \n\n\n By: Electrobub")
         
 
 class Overview(QtGui.QWidget):
@@ -133,6 +140,9 @@ class Overview(QtGui.QWidget):
         #Enable Sorting
         self.tableview.setSortingEnabled(True)
         
+        #Select Whole Rows
+        self.tableview.setSelectionBehavior(QtGui.QAbstractItemView.SelectRows)
+        
         #Hide Grid
         #tableview.setShowGrid(False)
         
@@ -148,8 +158,8 @@ class Overview(QtGui.QWidget):
         self.addBtn.setStatusTip('Add a new component')
         self.connect(self.removeBtn, QtCore.SIGNAL("clicked()"), self.removeSelectedRows)
         self.connect(self.addBtn, QtCore.SIGNAL("clicked()"), self.openAddDialog)
-        #self.connect(self.addBtn, QtCore.SIGNAL("clicked()"), self.openDialog)
-        self.connect(self.modifyBtn, QtCore.SIGNAL("clicked()"), self.openDialog)
+        #self.connect(self.addBtn, QtCore.SIGNAL("clicked()"), self.openModifyDialog)
+        self.connect(self.modifyBtn, QtCore.SIGNAL("clicked()"), self.openModifyDialog)
         
         self.connect(self.tableview, QtCore.SIGNAL("doubleClicked(const QModelIndex &)"), self.doubleClick)
         
@@ -190,43 +200,46 @@ class Overview(QtGui.QWidget):
         btn.move(50, 50)"""
 
         #self.show()
-       
+    
+    def getRowList(self, indexList):
+        temp = set()
+        for line in indexList:
+            temp.add(line.row())
+        return list(temp)
        
     def removeSelectedRows(self):
         
         #Get index list of all selected cells
         indexList = self.tableview.selectionModel().selectedIndexes()
-        if (len(indexList) < 1):
+        rowList = self.getRowList(indexList)
+        
+        if (len(rowList) < 1):
             return
         
-        
-        if QtGui.QMessageBox.question(self, "Remove Components", ("Are you sure you want to remove "+str(len(indexList))+" components?"), QtGui.QMessageBox.Yes|QtGui.QMessageBox.No) == QtGui.QMessageBox.No:
+        if QtGui.QMessageBox.question(self, "Remove Components", ("Are you sure you want to remove "+str(len(rowList))+" components?"), QtGui.QMessageBox.Yes|QtGui.QMessageBox.No) == QtGui.QMessageBox.No:
             return
         
-        #Go through list and remove rows
-        #for index in indexList:
-        #    print index.column()
-        
-        firstRow = indexList[0].row()
-        lastRow = indexList[-1].row()
+        firstRow = rowList[0]
+        lastRow = rowList[-1]
         
         rowsToDelete = lastRow - firstRow + 1
 
         self.tablemode.removeRows(firstRow, rowsToDelete)
         
         
-    def openDialog(self):
+    def openModifyDialog(self):
         
         #Check if more than one row is selected
         indexList = self.tableview.selectionModel().selectedIndexes()
-        if (len(indexList) > 1):
+        rowList = self.getRowList(indexList)
+        if (len(rowList) > 1):
             QtGui.QMessageBox.information(self, "Modify - Multiple Rows Selected", "Multiple Rows Selected - Please Choose A Single Row")
             return
-        elif (len(indexList) is 0):
+        elif (len(rowList) is 0):
             QtGui.QMessageBox.information(self, "Modify", "No Row Selected - Please Choose A Single Row")
             return
         
-        row = indexList[0].row()
+        row = rowList[0]
         #rowData = self.tablemode.getRowData(row)
         #rowData = components[row]
 
@@ -245,9 +258,14 @@ class Overview(QtGui.QWidget):
             self.openDatasheet(index)
             return
         elif header[index.column()] is not QTY:
-            self.openDialog()
+            self.openModifyDialog()
             return
-            
+    
+    def saveDialog(self):
+        if QtGui.QMessageBox.question(self, "Save", ("Are you sure you want to save components?"), QtGui.QMessageBox.Yes|QtGui.QMessageBox.No) == QtGui.QMessageBox.No:
+            return
+        components.saveCsvFile()
+    
     def openDatasheet(self, index):
         QtGui.QMessageBox.information(self, "Datasheet", "Here is your "+str(components[index.row()].name)+" datasheet, sir")
 
