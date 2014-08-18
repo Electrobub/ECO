@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 #TODO
+# - Filenames with disallowed characters (eg. /) will not save as file (datasheet pdf d/l) - worth saving some other way than using component name?
 # - Get relative filename for PDF datasheet
 # - Add Same Name Check
 # - Add Storage Check - with component dialog (to make sure other component is not in that spot)
@@ -8,9 +9,9 @@
 # - Add regexp search box on main window (look at QSortFilterProxyModel)
 
 #TODO
+# - componentDialog - add datasheet lineedit underneath comments? Look nicer?
 # - Look what super() does. (Is it necessary in Dialog? componentDialog)
 #or is it possible to call the int like QtGui.QDialog.__init__(self, parent)
-# - In componentDialog figure out the proper passing of parent, so the dialog gets centred correctly
 
 # List Positions
 NAME = 0
@@ -27,11 +28,16 @@ DESIREDQTY = 10
 QTY = 11
 SUPPLIERS = 12
 
+# Checking datasheet response
+URLDOWNLOAD = 0
+URLTEXT = 1
+
 import sys
 from PySide import QtGui
 from PySide import QtCore
 import operator
 from Components import ComponentContainer, Component
+import urllib2
 
 header = [NAME, CATEGORY, DESCRIPTION, PACKAGE, DATASHEET, QTY]
 #header = ['Name', 'Category', 'Description', 'Package', 'Qty', 'Manufacturer', 'Datasheet']
@@ -270,6 +276,87 @@ class Overview(QtGui.QWidget):
     def openDatasheet(self, index):
         QtGui.QMessageBox.information(self, "Datasheet", "Here is your "+str(components[index.row()].name)+" datasheet, sir")
 
+class urlDatasheetDialog(QtGui.QDialog):
+    
+    def __init__(self, parent = None):
+        super(urlDatasheetDialog, self).__init__(parent)
+        
+        self.parent = parent
+        self.status = -1
+        
+        self.urlLabel = QtGui.QLabel('URL')
+        self.urlEdit = QtGui.QLineEdit()
+        
+        self.addUrlBtn = QtGui.QPushButton("Add")
+        self.dlUrlBtn = QtGui.QPushButton("Download")
+        self.btnBox = QtGui.QDialogButtonBox()
+        self.btnBox.addButton(self.addUrlBtn, QtGui.QDialogButtonBox.AcceptRole)
+        self.btnBox.addButton(self.dlUrlBtn, QtGui.QDialogButtonBox.ActionRole)
+        
+        self.connect(self.addUrlBtn, QtCore.SIGNAL('clicked()'), self.addUrl)
+        self.connect(self.dlUrlBtn, QtCore.SIGNAL('clicked()'), self.dlFile)
+        
+        grid = QtGui.QGridLayout()
+        grid.addWidget(self.urlLabel, 0, 0)
+        grid.addWidget(self.urlEdit, 0, 1)
+        grid.addWidget(self.btnBox, 1, 0, 1, 2)
+        
+        self.resize(270, 80)
+        self.setWindowTitle('Datasheet')
+        
+        self.setLayout(grid)
+        #self.connect(self.dataFileBtn, QtCore.SIGNAL('clicked()'), self.selectFile)
+    
+    def addUrl(self):
+        url = self.getUrl()
+        if (self.validUrl()):
+            self.status = URLTEXT
+            QtGui.QDialog.accept(self)
+    
+    def validUrl(self):
+        url = self.getUrl()
+        if (url.startswith("http://") == False):
+            QtGui.QMessageBox.warning(self, "Input Error", "URL needs to begin with 'http://'")
+            return False
+        return True
+    
+    def getUrl(self):
+        urlText = str(self.urlEdit.text())
+        return urlText
+    
+    def getStatus(self):
+        return self.status
+    
+    def dlFile(self):
+        name = self.parent.getName()
+        filename = name+".pdf"
+        if (self.validUrl() == False):
+            return
+        url = self.getUrl()
+        
+        req = urllib2.Request(url)
+        r = urllib2.urlopen(req)
+        
+        headers = r.info()
+        filetype = headers['Content-Type']
+        
+        if filetype == "application/pdf":
+            try:
+                f = open(filename, 'wb')
+                f.write(r.read())
+                f.close()
+            except:
+                QtGui.QMessageBox.warning(self, "File Error", "Error saving to "+filename)
+                return
+            
+            QtGui.QMessageBox.information(self, "File Downloaded", "Successfully downloaded to "+filename)
+            self.status = URLDOWNLOAD
+            QtGui.QDialog.accept(self)
+        else:
+            QtGui.QMessageBox.warning(self, "File Error", "Expecting PDF file, found '"+filetype+"' instead")
+            return
+        #urllib.urlretrieve(url, "test.
+                    
 class componentDialog(QtGui.QDialog):
     
     def __init__(self, parent = None, action = 'add', row=-1):
@@ -311,6 +398,7 @@ class componentDialog(QtGui.QDialog):
         self.dataBtnBox.addButton(self.dataUrlBtn, QtGui.QDialogButtonBox.ActionRole)
         
         self.connect(self.dataFileBtn, QtCore.SIGNAL('clicked()'), self.selectFile)
+        self.connect(self.dataUrlBtn, QtCore.SIGNAL('clicked()'), self.addUrl)
         
         boxLabel = QtGui.QLabel('Storage Box')
         posLabel = QtGui.QLabel('Position')
@@ -400,7 +488,6 @@ class componentDialog(QtGui.QDialog):
         reorderBox = QtGui.QGroupBox('Reordering')
         qtyBox = QtGui.QGroupBox('Stock')
         
-        dataGrid = QtGui.QGridLayout()
         grid = QtGui.QGridLayout()
         grid.addWidget(nameLabel, 0, 0)
         grid.addWidget(manufLabel, 1, 0)
@@ -480,13 +567,14 @@ class componentDialog(QtGui.QDialog):
         topLeftLayout = QtGui.QVBoxLayout()
 
         topLayout = QtGui.QHBoxLayout()
-
+        
+        #TODO Look if this is really necessary? Grid into HBOX? Left over from start...
         topLayout.addLayout(grid)
 
         self.setLayout(topLayout)
 
-        
-        self.setGeometry(300, 300, 650, 350)
+        self.resize(650, 350)
+        #self.setGeometry(300, 300, 650, 350)
         self.setWindowTitle('Component Viewer')
         #self.statusBar().showMessage('Welcome')
         
@@ -496,8 +584,21 @@ class componentDialog(QtGui.QDialog):
         file = QtGui.QFileDialog.getOpenFileName(self, "Open Datasheet", QtCore.QDir.currentPath(), "PDF(*.pdf)")
         self.dataEdit.setText(file[0])
         
+    def addUrl(self):
+        urlDialog = urlDatasheetDialog(self)
         
-        
+        if (urlDialog.exec_()):
+            status = urlDialog.getStatus()
+            
+            if (status == URLDOWNLOAD):
+                filename = str(self.nameEdit.text()+".pdf")
+                self.dataEdit.setText(filename)
+            elif (status == URLTEXT):
+                self.dataEdit.setText(urlDialog.getUrl())
+    
+    def getName(self):
+        return str(self.nameEdit.text())
+    
     def accept(self):
         #global components
         class NameError(Exception): pass

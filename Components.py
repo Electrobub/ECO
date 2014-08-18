@@ -217,8 +217,8 @@ class ComponentContainer(object):
     
     
     def loadCsvFile(self, filename="components.txt"):
-        self.filename = filename
-        with open(filename, 'rb') as csvfile:
+        #self.filename = filename
+        with open(self.filename, 'rb') as csvfile:
             compReader = csv.reader(csvfile, delimiter=',', quotechar='"')
             for row in compReader:
                 # 3 Suppliers. Order: Name, RefCode
@@ -228,7 +228,7 @@ class ComponentContainer(object):
     def saveCsvFile(self, filename="components.txt"):
         print "Saving..."
         self.filename = filename
-        with open(filename, 'wb') as csvfile:
+        with open(self.filename, 'wb') as csvfile:
             compWriter = csv.writer(csvfile, delimiter=',', quotechar='"')
             for component in self.components:
                 suppliersList = component[SUPPLIERS]
