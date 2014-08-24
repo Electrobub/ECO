@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 #TODO
+# - Check if components.txt file exists, if not create one
 # - Filenames with disallowed characters (eg. /) will not save as file (datasheet pdf d/l) - worth saving some other way than using component name?
 # - Get relative filename for PDF datasheet
 # - Add Same Name Check
@@ -40,6 +41,8 @@ from Components import ComponentContainer, Component
 import urllib2
 
 header = [NAME, CATEGORY, DESCRIPTION, PACKAGE, DATASHEET, QTY]
+headerSizes = [150, 150, 200, 50, 100, 50]
+headerPercent = [18, 18, 30, 10, 12, 12]
 #header = ['Name', 'Category', 'Description', 'Package', 'Qty', 'Manufacturer', 'Datasheet']
 #data = [['2N222', 'Transistor', 'All in one package', 'Through Hole', '10', 'Texas', 'No'],
 #['WOWZa', 'MOSFET', 'Does what its told', 'Through Hole', '2', 'SM', 'No']]
@@ -111,11 +114,17 @@ class Window(QtGui.QMainWindow):
         self.statusBar().showMessage('Welcome')
         #self.move(200,40)
         
-        self.show()
+        self.show() #resizeEvent is called
+        
+        print "Other size:", self.width()
         
     def aboutDialog(self):
         QtGui.QMessageBox.information(self, "About", "Components Organiser was made when I could not find a simple program with the options I was looking for to help me organise my SMD components.\n\nThis program was made using Python & QT \n\n\n By: Electrobub")
-        
+    
+    def resizeEvent (self, event):
+        #Call methods to auto update the size of headers
+
+        self.formWidget.resizeHeaders(event)
 
 class Overview(QtGui.QWidget):
 
@@ -153,8 +162,15 @@ class Overview(QtGui.QWidget):
         #Hide Grid
         #tableview.setShowGrid(False)
         
+        #Disable Horizontal Scrollbar
+        self.tableview.horizontalScrollBar().setDisabled(True)
+        self.tableview.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        
         #Resize Mode
-        self.tableview.horizontalHeader().setResizeMode(QtGui.QHeaderView.Stretch)
+        self.tableview.horizontalHeader().setResizeMode(QtGui.QHeaderView.Interactive)
+        #self.tableview.horizontalHeader().setResizeMode(QtGui.QHeaderView.Interactive)
+        #self.tableview.horizontalHeader().setResizeMode(0, QtGui.QHeaderView.Interactive)
+        self.tableview.horizontalHeader().setStretchLastSection(True)
         
 
         self.removeBtn = QtGui.QPushButton('Remove', self)
@@ -184,6 +200,15 @@ class Overview(QtGui.QWidget):
 
         self.setLayout(midLayout)
         
+        self.printSectionSizes(self.tableview)
+        
+        self.setHeaderSizes(self.tableview)
+        
+        self.printSectionSizes(self.tableview)
+        
+        print "Sizehint:", self.tableview.sizeHint()
+        
+        print "Self Width:", self.tableview.width()
         
     def updateUi(self):
         
@@ -275,6 +300,30 @@ class Overview(QtGui.QWidget):
     
     def openDatasheet(self, index):
         QtGui.QMessageBox.information(self, "Datasheet", "Here is your "+str(components[index.row()].name)+" datasheet, sir")
+        
+    def printSectionSizes(self, tableview):
+        for x in range(len(header)):
+            print "Header:", x, "Size:", self.tableview.horizontalHeader().sectionSize(x) 
+            
+        x = 6
+        print "Header:", x, "Size:", self.tableview.horizontalHeader().sectionSize(x)
+        print "Length:", self.tableview.horizontalHeader().length()
+    
+    def setHeaderSizes(self, tableview):
+        for x in range(len(header)):
+            self.tableview.horizontalHeader().resizeSection(x, headerSizes[x]) 
+
+    def resizeHeaders(self, event):
+        offset = 25 #Offset of windowsize to widgetsize
+        newWindowWidth =  event.size().width()
+        newWidgetWidth = newWindowWidth - offset
+        print "Event width:", newWindowWidth
+        
+        for x in range(len(header)):
+            newWidth = headerPercent[x]/100.0 * newWidgetWidth
+            self.tableview.horizontalHeader().resizeSection(x, newWidth) 
+            #print "Header:", x, "Size:", self.tableview.horizontalHeader().resizeSection(x) 
+            print "New width:", newWidth
 
 class urlDatasheetDialog(QtGui.QDialog):
     
@@ -419,6 +468,7 @@ class componentDialog(QtGui.QDialog):
         key1Label = QtGui.QLabel('KeyCode')
         
         self.supplier1Edit = QtGui.QComboBox()
+        self.supplier1Edit.setMinimumSize(150, 0)
         self.key1Edit = QtGui.QLineEdit(unicode(self.component.getSupplier(1, 'key')))
         
         supplier2Label = QtGui.QLabel('Supplier 2')
@@ -774,7 +824,6 @@ class qtyEditDelegate(QtGui.QStyledItemDelegate):
     
     def setEditorData(self, editor, index):
         itemVar = index.data(QtCore.Qt.DisplayRole)
-        #itemStr = itemVar.toPyObject()
         itemInt = int(itemVar)
         editor.setValue(itemInt)
         
