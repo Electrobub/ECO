@@ -39,10 +39,12 @@ from PySide import QtCore
 import operator
 from Components import ComponentContainer, Component
 import urllib2
+import subprocess
 
 header = [NAME, CATEGORY, DESCRIPTION, PACKAGE, DATASHEET, QTY]
 headerSizes = [150, 150, 200, 50, 100, 50]
 headerPercent = [18, 18, 30, 10, 12, 12]
+windowWidth = 850
 #header = ['Name', 'Category', 'Description', 'Package', 'Qty', 'Manufacturer', 'Datasheet']
 #data = [['2N222', 'Transistor', 'All in one package', 'Through Hole', '10', 'Texas', 'No'],
 #['WOWZa', 'MOSFET', 'Does what its told', 'Through Hole', '2', 'SM', 'No']]
@@ -124,7 +126,7 @@ class Window(QtGui.QMainWindow):
     def resizeEvent (self, event):
         #Call methods to auto update the size of headers
 
-        self.formWidget.resizeHeaders(event)
+        self.formWidget.windowResized(event)
 
 class Overview(QtGui.QWidget):
 
@@ -186,6 +188,7 @@ class Overview(QtGui.QWidget):
         
         self.connect(self.tableview, QtCore.SIGNAL("doubleClicked(const QModelIndex &)"), self.doubleClick)
         
+        self.tableview.horizontalHeader().sectionResized.connect(self.resizeColumnWidth)
         
 
         bottomLayout = QtGui.QHBoxLayout()
@@ -300,6 +303,17 @@ class Overview(QtGui.QWidget):
     
     def openDatasheet(self, index):
         QtGui.QMessageBox.information(self, "Datasheet", "Here is your "+str(components[index.row()].name)+" datasheet, sir")
+        print "PDF: ", components[index.row()].datasheet
+        #subprocess.call("xdg-open", str(components[index.row()].datasheet))
+        #Linux
+        if sys.platform == 'linux2':
+            subprocess.call(["xdg-open " + str(components[index.row()].datasheet)], shell=True)
+        #Windows / Mac
+        else:
+            subprocess.call(["open " + str(components[index.row()].datasheet)], shell=True)
+        #Windows
+        #os.startfile(filepath)
+        
         
     def printSectionSizes(self, tableview):
         for x in range(len(header)):
@@ -313,17 +327,47 @@ class Overview(QtGui.QWidget):
         for x in range(len(header)):
             self.tableview.horizontalHeader().resizeSection(x, headerSizes[x]) 
 
-    def resizeHeaders(self, event):
+    def windowResized(self, event):
+        global windowWidth
+        windowWidth =  event.size().width()
+        print "Event width:", windowWidth
+        self.resizeHeaders()
+        
+    def resizeHeaders(self):
         offset = 25 #Offset of windowsize to widgetsize
-        newWindowWidth =  event.size().width()
-        newWidgetWidth = newWindowWidth - offset
-        print "Event width:", newWindowWidth
+        widgetWidth = windowWidth - offset
         
         for x in range(len(header)):
-            newWidth = headerPercent[x]/100.0 * newWidgetWidth
+            newWidth = headerPercent[x]/100.0 * widgetWidth
             self.tableview.horizontalHeader().resizeSection(x, newWidth) 
-            #print "Header:", x, "Size:", self.tableview.horizontalHeader().resizeSection(x) 
-            print "New width:", newWidth
+            print "Header:", x, "Size:", self.tableview.horizontalHeader().sectionSize(x) 
+            #print "New width:", newWidth
+    
+    def resizeColumnWidth(self, index, oldSize, newSize):
+        pass
+    #def resizeColumnWidth(self, index, oldSize, newSize):
+        #print "Index:", index
+        ##Update the header percentage proportions
+        #print "WindowWidth:",windowWidth
+        #print "Oldsize:", oldSize
+        #print "Newsize:", newSize
+        #oldPercent = headerPercent[index]
+        #newPercent = newSize * 100.0 / windowWidth
+        #diffPercent = newPercent - oldPercent
+        ##diffPercent = 0
+        
+        #print "DiffPercent:", diffPercent
+        
+        #headerPercent[index] = headerPercent[index] + diffPercent
+        
+        ##if newSize > oldSize:
+            ##headerPercent[index] = headerPercent[index] + diffPercent
+        ##else:
+            ##headerPercent[index] = headerPercent[index] - diffPercent
+        
+        #print "Old Percent:", oldPercent
+        #print "New Percent:", newPercent
+        #print "Column Resized"
 
 class urlDatasheetDialog(QtGui.QDialog):
     
