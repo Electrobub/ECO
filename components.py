@@ -1,7 +1,7 @@
 import sys
 import csv
-from PySide import QtGui
-from PySide import QtCore
+from PySide2 import QtGui
+from PySide2 import QtCore
 import operator
 
 # List Positions
@@ -144,19 +144,19 @@ class ComponentContainer(object):
     def addComponent(self, component):
         #self.components[self.getLastId()+1] = component #Was for dictionary
         self.components.append(component)
-        self.manufacturers.add(unicode(component.manuf))
-        self.categories.add(unicode(component.cat))
-        self.location.add(unicode(component.loc))
-        self.packages.add(unicode(component.pack))
+        self.manufacturers.add(str(component.manuf))
+        self.categories.add(str(component.cat))
+        self.location.add(str(component.loc))
+        self.packages.add(str(component.pack))
         
         for supp, key in component.suppliers:
-            self.suppliers.add(unicode(supp))
+            self.suppliers.add(str(supp))
         
         #TODO 
         # - Figure out the insertrow of the tablemodel
         # Works without needing it on KDE, maybe on Windows or Mac?
-        print self.components
-        print self.manufacturers
+        print(self.components)
+        print(self.manufacturers)
         
     def removeComponent(self, ident):
         del self.components[ident]
@@ -164,7 +164,18 @@ class ComponentContainer(object):
     def removeComponents(self, indent, rows):
         for i in range(0, rows):
             self.removeComponent(indent)
-        
+    
+    def sort(self, pos, dir):
+        if dir is 'asc':
+            self.components = sorted(self.components, key=lambda component: component[pos].lower())
+        elif dir is 'desc':
+            self.components = sorted(self.components, key=lambda component: component[pos].lower(), reverse = True)
+
+        """if dir is 'asc':
+            self.components = sorted(self.components, key=lambda component: component[pos] if isinstance(component[pos], int) else component[pos].lower())
+        elif dir is 'desc':
+            self.components = sorted(self.components, key=lambda component: component[pos] if isinstance(component[pos], int) else component[pos].lower(), reverse = True)"""
+
     def recreateSets(self):
         self.manufacturers.clear()
         self.categories.clear()
@@ -175,14 +186,14 @@ class ComponentContainer(object):
         self.addEmptySets()
         
         for component in self.components:
-            self.manufacturers.add(unicode(component.manuf))
-            self.categories.add(unicode(component.cat))
-            self.location.add(unicode(component.loc))
-            self.packages.add(unicode(component.pack))
+            self.manufacturers.add(str(component.manuf))
+            self.categories.add(str(component.cat))
+            self.location.add(str(component.loc))
+            self.packages.add(str(component.pack))
             
             for supp, key in component.suppliers:
-                self.suppliers.add(unicode(supp))
-        print "------------------------ Recreating"
+                self.suppliers.add(str(supp))
+        print("------------------------ Recreating")
     
     #def sort(self):
         
@@ -190,11 +201,11 @@ class ComponentContainer(object):
     def addEmptySets(self):
         #To give the user a choice to clear a selection
         # And used with component dialog when adding a component (with empty comboboxes)
-        self.manufacturers.add(unicode(''))
-        self.categories.add(unicode(''))
-        self.location.add(unicode(''))
-        self.packages.add(unicode(''))
-        self.suppliers.add(unicode(''))
+        self.manufacturers.add(str(''))
+        self.categories.add(str(''))
+        self.location.add(str(''))
+        self.packages.add(str(''))
+        self.suppliers.add(str(''))
     
     def getManufacturers(self):
         return self.manufacturers
@@ -218,7 +229,9 @@ class ComponentContainer(object):
     
     def loadCsvFile(self, filename="components.txt"):
         #self.filename = filename
-        with open(self.filename, 'rb') as csvfile:
+        with open(self.filename, 'a+t') as csvfile:
+        #with open(self.filename, 'rt') as csvfile:
+            csvfile.seek(0)
             compReader = csv.reader(csvfile, delimiter=',', quotechar='"')
             for row in compReader:
                 # 3 Suppliers. Order: Name, RefCode
@@ -226,9 +239,9 @@ class ComponentContainer(object):
                 self.addComponent(Component(row[NAME], row[MANUFACTURER], row[CATEGORY], row[PACKAGE],row[DESCRIPTION], row[DATASHEET], row[COMMENTS], row[LOCATION], row[POSITION], row[MINQTY], row[DESIREDQTY], row[QTY], suppliersPrepList))
     
     def saveCsvFile(self, filename="components.txt"):
-        print "Saving..."
+        print("Saving...")
         self.filename = filename
-        with open(self.filename, 'wb') as csvfile:
+        with open(self.filename, 'wt') as csvfile:
             compWriter = csv.writer(csvfile, delimiter=',', quotechar='"')
             for component in self.components:
                 suppliersList = component[SUPPLIERS]

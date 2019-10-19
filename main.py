@@ -1,18 +1,57 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 #TODO
-# - Check if components.txt file exists, if not create one
-# - Filenames with disallowed characters (eg. /) will not save as file (datasheet pdf d/l) - worth saving some other way than using component name?
+#Something wrong with inserRows??? Cannot add components
+#Segfault
+#Try:
+# in InsertRows():
+#       beginInsertRows()
+#       List_to_add_to.insert()
+#       endInsertRows()
+#       return True
+#
+# Really necessary to reimplement insertRows()? (tried using insertRow... But it doesn't seem to update the view once you are back on the main screen... Until you initiate a refresh such as sorting it...)
+# 
+# BOTH WORK:
+# self.parent.tablemode.insertRow(self.parent.tablemode.rowCount(QtCore.QModelIndex()))
+# self.parent.tablemode.insertRows(self.parent.tablemode.rowCount(QtCore.QModelIndex()), 1)
+# 
+# It's working... It was because row was set to -1 for the Component object... Obviously there are errors if that value is used for the row in QT!! 0.0
+
+#TODO
 # - Get relative filename for PDF datasheet
 # - Add Same Name Check
 # - Add Storage Check - with component dialog (to make sure other component is not in that spot)
-# - Fix Table Sorting (implement __lt__ in ComponentClass? Or other that is required)
-# - Add regexp search box on main window (look at QSortFilterProxyModel)
+# - Add checking / removal of commas in any fields (stop screwing up CSV)
 
 #TODO
 # - componentDialog - add datasheet lineedit underneath comments? Look nicer?
-# - Look what super() does. (Is it necessary in Dialog? componentDialog)
-#or is it possible to call the int like QtGui.QDialog.__init__(self, parent)
+
+#DONE (From TODO Lists)
+# - Fix Table Sorting (implement __lt__ in ComponentClass? Or other that is required)
+# - Check if components.txt file exists, if not create one (Doesn't actually check - opens in append extended mode + seeks to beginning) Create a file if it doesn't already exist
+# - Filenames with disallowed characters (eg. /) will not save as file (datasheet pdf d/l) - worth saving some other way than using component name?
+# - Add regexp search box on main window (look at QSortFilterProxyModel)
+# - Allow for https in url check
+
+#Changelog v0.2 (QT5 & Python3) 30/01/19
+# Added sorting by columns (with sort method of TableModel)
+# Quantities added with a new component are handled as strings (same as those loaded from a CSV or an existing component)
+# Creates components.txt file if it doesn't already exist
+# Safe characters used in filenames (invalid characters stripped)
+# Added search/filtering of selected column (with QSortFilterProxyModel)
+# Accepts https:// in URLs
+# Added search shortcut ctrl+F (focus/select-all)
+# Fixed index problem with adding items with QSortFilterProxyModel implemented. (Had to simply move / reref. sort() from QAbstractTableModel to QSortFilterProxyModel. Turns out QSortFilterProxyModel reimplements sort() that operates on sortRole()... Read the Docs more closely!!! http://doc.qt.io/qt-5/qsortfilterproxymodel.html )
+# super() syntax updated to PY3
+
+"""
+Create a QSortFilterProxyModel and setModel() of the QTableView to it.
+setSourceModel() of your QSortFilterProxyModel to your subclassed model.
+Set the string you want to filter on using setFilterFixedString() or setFilterRegExp() in your QSortFilterProxyModel
+
+From: https://stackoverflow.com/questions/6785481/how-to-set-filter-option-in-qtablewidget
+"""
 
 # List Positions
 NAME = 0
@@ -33,13 +72,18 @@ SUPPLIERS = 12
 URLDOWNLOAD = 0
 URLTEXT = 1
 
+DATASHEET_DIR = "datasheets/"
+
 import sys
-from PySide import QtGui
-from PySide import QtCore
+from PySide2 import QtGui
+from PySide2 import QtCore
+from PySide2 import QtWidgets
 import operator
-from Components import ComponentContainer, Component
-import urllib2
+from components import ComponentContainer, Component
+#import urllib2 #Python 2
+from urllib.request import urlopen
 import subprocess
+import re
 
 header = [NAME, CATEGORY, DESCRIPTION, PACKAGE, DATASHEET, QTY]
 headerSizes = [150, 150, 200, 50, 100, 50]
@@ -60,38 +104,39 @@ components = ComponentContainer('components.txt')
 #components.recreateSets()   
 components.loadCsvFile("components.txt")
 
-class Window(QtGui.QMainWindow):
+class Window(QtWidgets.QMainWindow):
     
     def __init__(self):
-        super(Window, self).__init__()
+        #super(Window, self).__init__()
+        super().__init__()
         
           
         self.formWidget = Overview(self) 
         self.setCentralWidget(self.formWidget) 
         
         #Actions
-        openAction = QtGui.QAction('&Open', self)
+        openAction = QtWidgets.QAction('&Open', self)
         openAction.setShortcut('Ctrl+O')
         openAction.setStatusTip('Open File')
         
-        saveAction = QtGui.QAction('&Save', self)
+        saveAction = QtWidgets.QAction('&Save', self)
         saveAction.setShortcut('Ctrl+S')
         saveAction.setStatusTip('Save File')
         #self.connect(saveAction, QtCore.SIGNAL("clicked()"), components.saveCsvFile)
         saveAction.connect(QtCore.SIGNAL("triggered()"), self.formWidget.saveDialog)
 
-        addAction = QtGui.QAction('&Add', self)
+        addAction = QtWidgets.QAction('&Add', self)
         addAction.setShortcut('Ctrl+A')
         addAction.setStatusTip('Add a new component')
         addAction.connect(QtCore.SIGNAL("triggered()"), self.formWidget.openAddDialog)
 
-        modifyAction = QtGui.QAction('&Modify', self)
+        modifyAction = QtWidgets.QAction('&Modify', self)
         modifyAction.setShortcut('Ctrl+M')
         modifyAction.setStatusTip('Modify selected component')
         modifyAction.connect(QtCore.SIGNAL("triggered()"), self.formWidget.openModifyDialog)
         #addAction.triggered.connect()
         
-        aboutAction = QtGui.QAction('&About', self)
+        aboutAction = QtWidgets.QAction('&About', self)
         aboutAction.setStatusTip('About Electronic Components Organiser')
         aboutAction.connect(QtCore.SIGNAL("triggered()"), self.aboutDialog)
         #addAction.triggered.connect()
@@ -108,7 +153,15 @@ class Window(QtGui.QMainWindow):
         
         fileMenu = menubar.addMenu('&Help')
         fileMenu.addAction(aboutAction)
-        fileMenu.addAction(aboutAction)
+        #fileMenu.addAction(aboutAction)
+
+        findBox = QtWidgets.QWidgetAction(self)
+        findBox.setDefaultWidget(QtWidgets.QLineEdit(self))
+        #bMenu
+        #menubar.addAction("test", findBox)
+        #menubar.addSeparator()
+        #menubar.setCornerWidget(QtWidgets.QLineEdit(self))
+        #menubar.
         
         
         self.setGeometry(300, 300, 850, 550)
@@ -118,68 +171,74 @@ class Window(QtGui.QMainWindow):
         
         self.show() #resizeEvent is called
         
-        print "Other size:", self.width()
+        print("Other size:", self.width())
         
     def aboutDialog(self):
-        QtGui.QMessageBox.information(self, "About", "Components Organiser was made when I could not find a simple program with the options I was looking for to help me organise my SMD components.\n\nThis program was made using Python & QT \n\n\n By: Electrobub")
+        QtWidgets.QMessageBox.information(self, "About", "Components Organiser was made when I could not find a simple program with the options I was looking for to help me organise my SMD components.\n\nThis program was made using Python & QT \n\n\n By: Electrobub")
     
     def resizeEvent (self, event):
         #Call methods to auto update the size of headers
 
         self.formWidget.windowResized(event)
 
-class Overview(QtGui.QWidget):
+class Overview(QtWidgets.QWidget):
 
     def __init__(self, parent = None):
-        super(Overview, self).__init__(parent)
+        #super(Overview, self).__init__(parent)
+        super().__init__(parent)
         
         self.initUI()
 
     def initUI(self):
 
 
-        """nameLabel = QtGui.QLabel('Name')
-        catLabel = QtGui.QLabel('Category')
-        descLabel = QtGui.QLabel('Description')
-        packLabel = QtGui.QLabel('Package')
-        qtyLabel = QtGui.QLabel('Qty')
-        manufLabel = QtGui.QLabel('Manufacturer')
-        dataLabel = QtGui.QLabel('Datasheet')"""
+        """nameLabel = QtWidgets.QLabel('Name')
+        catLabel = QtWidgets.QLabel('Category')
+        descLabel = QtWidgets.QLabel('Description')
+        packLabel = QtWidgets.QLabel('Package')
+        qtyLabel = QtWidgets.QLabel('Qty')
+        manufLabel = QtWidgets.QLabel('Manufacturer')
+        dataLabel = QtWidgets.QLabel('Datasheet')"""
         
         # Create the view
-        self.tableview = QtGui.QTableView()
+        self.tableview = QtWidgets.QTableView()
         self.delegate = qtyEditDelegate()
         
         # Set the Model
         self.tablemode = MyTableModel(self)
-        self.tableview.setModel(self.tablemode)
+        #self.tableview.setModel(self.tablemode)   #OLD - just tablemodel no filtering
+
+        self.proxymodel = MySortFilterModel(self)
+        #self.proxymodel = QtCore.QSortFilterProxyModel(self)#MySortFilterModel(self)
+        self.proxymodel.setSourceModel(self.tablemode)
+        self.tableview.setModel(self.proxymodel)
         self.tableview.setItemDelegate(self.delegate)
-        
+
         #Enable Sorting
         self.tableview.setSortingEnabled(True)
         
         #Select Whole Rows
-        self.tableview.setSelectionBehavior(QtGui.QAbstractItemView.SelectRows)
+        self.tableview.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         
         #Hide Grid
-        #tableview.setShowGrid(False)
+        #self.tableview.setShowGrid(False)
         
         #Disable Horizontal Scrollbar
         self.tableview.horizontalScrollBar().setDisabled(True)
         self.tableview.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         
         #Resize Mode
-        self.tableview.horizontalHeader().setResizeMode(QtGui.QHeaderView.Interactive)
-        #self.tableview.horizontalHeader().setResizeMode(QtGui.QHeaderView.Interactive)
-        #self.tableview.horizontalHeader().setResizeMode(0, QtGui.QHeaderView.Interactive)
+        self.tableview.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+        #self.tableview.horizontalHeader().setResizeMode(QtWidgets.QHeaderView.Interactive)
+        #self.tableview.horizontalHeader().setResizeMode(0, QtWidgets.QHeaderView.Interactive)
         self.tableview.horizontalHeader().setStretchLastSection(True)
         
 
-        self.removeBtn = QtGui.QPushButton('Remove', self)
+        self.removeBtn = QtWidgets.QPushButton('Remove', self)
         self.removeBtn.setStatusTip('Remove Selected Component')
-        self.modifyBtn = QtGui.QPushButton('Modify', self)
+        self.modifyBtn = QtWidgets.QPushButton('Modify', self)
         self.modifyBtn.setStatusTip('Modify selected component')
-        self.addBtn = QtGui.QPushButton('Add', self)
+        self.addBtn = QtWidgets.QPushButton('Add', self)
         self.addBtn.setStatusTip('Add a new component')
         self.connect(self.removeBtn, QtCore.SIGNAL("clicked()"), self.removeSelectedRows)
         self.connect(self.addBtn, QtCore.SIGNAL("clicked()"), self.openAddDialog)
@@ -191,13 +250,36 @@ class Overview(QtGui.QWidget):
         self.tableview.horizontalHeader().sectionResized.connect(self.resizeColumnWidth)
         
 
-        bottomLayout = QtGui.QHBoxLayout()
+        # NEW ---------------------------------------------
+        self.searchBox = QtWidgets.QLineEdit()
+        self.searchBox.setPlaceholderText("Find")   # Use QLineEdit::selectAll() ? To grab in text when box is selected?
+        self.searchBox.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Preferred) #Ignores the following - width - if not present...
+        self.searchBox.setMinimumSize(200, 10)
+        self.searchFocus = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+F"), self)
+        self.connect(self.searchFocus, QtCore.SIGNAL("activated()"), self.searchBox.setFocus)
+        self.connect(self.searchFocus, QtCore.SIGNAL("activated()"), self.searchBox.selectAll)
+
+        self.searchCol = QtWidgets.QComboBox()
+        self.searchCol.setMinimumSize(100, 0)
+        self.searchCol.addItems([dataLabels[x] for x in header])
+
+        self.connect(self.searchBox, QtCore.SIGNAL("textChanged(const QString &)"), self.filterText)
+        self.connect(self.searchCol, QtCore.SIGNAL("currentIndexChanged(int)"), self.filterCol)
+
+        topLayout = QtWidgets.QHBoxLayout()
+        topLayout.addStretch()
+        topLayout.addWidget(self.searchCol)
+        topLayout.addWidget(self.searchBox)
+        # --------------------------------------------------
+
+        bottomLayout = QtWidgets.QHBoxLayout()
         bottomLayout.addStretch()
         bottomLayout.addWidget(self.removeBtn)
         bottomLayout.addWidget(self.modifyBtn)
         bottomLayout.addWidget(self.addBtn)
 
-        midLayout = QtGui.QVBoxLayout()
+        midLayout = QtWidgets.QVBoxLayout()
+        midLayout.addLayout(topLayout) # NEW------------------------- 
         midLayout.addWidget(self.tableview)
         midLayout.addLayout(bottomLayout)
 
@@ -209,14 +291,14 @@ class Overview(QtGui.QWidget):
         
         self.printSectionSizes(self.tableview)
         
-        print "Sizehint:", self.tableview.sizeHint()
+        print("Sizehint:", self.tableview.sizeHint())
         
-        print "Self Width:", self.tableview.width()
+        print("Self Width:", self.tableview.width())
         
     def updateUi(self):
         
-        print "rowCount:", self.tablemode.rowCount(self)
-        print "columnCount:", self.tablemode.columnCount(self)
+        print("rowCount:", self.tablemode.rowCount(self))
+        print("columnCount:", self.tablemode.columnCount(self))
         
         
         #print self.tableview.selectionModel().currentIndex()
@@ -226,11 +308,11 @@ class Overview(QtGui.QWidget):
         
         #self.emit(QtCore.SIGNAL("dataChanged(QModelIndex,QModelIndex)"), index, index)
 
-        """QtGui.QToolTip.setFont(QtGui.QFont('SansSerif',  10))
+        """QtWidgets.QToolTip.setFont(QtWidgets.QFont('SansSerif',  10))
 
         self.setToolTip('This is a <b>QWidge</b> widget')
 
-        btn = QtGui.QPushButton('Button', self)
+        btn = QtWidgets.QPushButton('Button', self)
         btn.setToolTip('This is a <b>QPushButton</b> widget')
         btn.move(50, 50)"""
 
@@ -242,6 +324,12 @@ class Overview(QtGui.QWidget):
             temp.add(line.row())
         return list(temp)
        
+    def filterText(self, text):
+        self.proxymodel.setFilterRegExp(QtCore.QRegExp(text, QtCore.Qt.CaseInsensitive, QtCore.QRegExp.FixedString)) #Change to QRegularExpression
+
+    def filterCol(self, col):
+        self.proxymodel.setFilterKeyColumn(col)
+
     def removeSelectedRows(self):
         
         #Get index list of all selected cells
@@ -251,7 +339,7 @@ class Overview(QtGui.QWidget):
         if (len(rowList) < 1):
             return
         
-        if QtGui.QMessageBox.question(self, "Remove Components", ("Are you sure you want to remove "+str(len(rowList))+" components?"), QtGui.QMessageBox.Yes|QtGui.QMessageBox.No) == QtGui.QMessageBox.No:
+        if QtWidgets.QMessageBox.question(self, "Remove Components", ("Are you sure you want to remove "+str(len(rowList))+" components?"), QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.No) == QtWidgets.QMessageBox.No:
             return
         
         firstRow = rowList[0]
@@ -268,10 +356,10 @@ class Overview(QtGui.QWidget):
         indexList = self.tableview.selectionModel().selectedIndexes()
         rowList = self.getRowList(indexList)
         if (len(rowList) > 1):
-            QtGui.QMessageBox.information(self, "Modify - Multiple Rows Selected", "Multiple Rows Selected - Please Choose A Single Row")
+            QtWidgets.QMessageBox.information(self, "Modify - Multiple Rows Selected", "Multiple Rows Selected - Please Choose A Single Row")
             return
         elif (len(rowList) is 0):
-            QtGui.QMessageBox.information(self, "Modify", "No Row Selected - Please Choose A Single Row")
+            QtWidgets.QMessageBox.information(self, "Modify", "No Row Selected - Please Choose A Single Row")
             return
         
         row = rowList[0]
@@ -297,16 +385,16 @@ class Overview(QtGui.QWidget):
             return
     
     def saveDialog(self):
-        if QtGui.QMessageBox.question(self, "Save", ("Are you sure you want to save components?"), QtGui.QMessageBox.Yes|QtGui.QMessageBox.No) == QtGui.QMessageBox.No:
+        if QtWidgets.QMessageBox.question(self, "Save", ("Are you sure you want to save components?"), QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.No) == QtWidgets.QMessageBox.No:
             return
         components.saveCsvFile()
     
     def openDatasheet(self, index):
-        QtGui.QMessageBox.information(self, "Datasheet", "Here is your "+str(components[index.row()].name)+" datasheet, sir")
-        print "PDF: ", components[index.row()].datasheet
+        QtWidgets.QMessageBox.information(self, "Datasheet", "Here is your "+str(components[index.row()].name)+" datasheet, sir")
+        print("PDF: ", components[index.row()].datasheet)
         #subprocess.call("xdg-open", str(components[index.row()].datasheet))
         #Linux
-        if sys.platform == 'linux2':
+        if sys.platform == 'linux': #was linux2 in python2
             subprocess.call(["xdg-open " + str(components[index.row()].datasheet)], shell=True)
         #Windows / Mac
         else:
@@ -317,11 +405,11 @@ class Overview(QtGui.QWidget):
         
     def printSectionSizes(self, tableview):
         for x in range(len(header)):
-            print "Header:", x, "Size:", self.tableview.horizontalHeader().sectionSize(x) 
+            print("Header:", x, "Size:", self.tableview.horizontalHeader().sectionSize(x))
             
         x = 6
-        print "Header:", x, "Size:", self.tableview.horizontalHeader().sectionSize(x)
-        print "Length:", self.tableview.horizontalHeader().length()
+        print("Header:", x, "Size:", self.tableview.horizontalHeader().sectionSize(x))
+        print("Length:", self.tableview.horizontalHeader().length())
     
     def setHeaderSizes(self, tableview):
         for x in range(len(header)):
@@ -330,7 +418,7 @@ class Overview(QtGui.QWidget):
     def windowResized(self, event):
         global windowWidth
         windowWidth =  event.size().width()
-        print "Event width:", windowWidth
+        print("Event width:", windowWidth)
         self.resizeHeaders()
         
     def resizeHeaders(self):
@@ -340,7 +428,7 @@ class Overview(QtGui.QWidget):
         for x in range(len(header)):
             newWidth = headerPercent[x]/100.0 * widgetWidth
             self.tableview.horizontalHeader().resizeSection(x, newWidth) 
-            print "Header:", x, "Size:", self.tableview.horizontalHeader().sectionSize(x) 
+            print("Header:", x, "Size:", self.tableview.horizontalHeader().sectionSize(x))
             #print "New width:", newWidth
     
     def resizeColumnWidth(self, index, oldSize, newSize):
@@ -369,27 +457,28 @@ class Overview(QtGui.QWidget):
         #print "New Percent:", newPercent
         #print "Column Resized"
 
-class urlDatasheetDialog(QtGui.QDialog):
+class urlDatasheetDialog(QtWidgets.QDialog):
     
     def __init__(self, parent = None):
-        super(urlDatasheetDialog, self).__init__(parent)
+        #super(urlDatasheetDialog, self).__init__(parent)
+        super().__init__(parent)
         
         self.parent = parent
         self.status = -1
         
-        self.urlLabel = QtGui.QLabel('URL')
-        self.urlEdit = QtGui.QLineEdit()
+        self.urlLabel = QtWidgets.QLabel('URL')
+        self.urlEdit = QtWidgets.QLineEdit()
         
-        self.addUrlBtn = QtGui.QPushButton("Add")
-        self.dlUrlBtn = QtGui.QPushButton("Download")
-        self.btnBox = QtGui.QDialogButtonBox()
-        self.btnBox.addButton(self.addUrlBtn, QtGui.QDialogButtonBox.AcceptRole)
-        self.btnBox.addButton(self.dlUrlBtn, QtGui.QDialogButtonBox.ActionRole)
+        self.addUrlBtn = QtWidgets.QPushButton("Add")
+        self.dlUrlBtn = QtWidgets.QPushButton("Download")
+        self.btnBox = QtWidgets.QDialogButtonBox()
+        self.btnBox.addButton(self.addUrlBtn, QtWidgets.QDialogButtonBox.AcceptRole)
+        self.btnBox.addButton(self.dlUrlBtn, QtWidgets.QDialogButtonBox.ActionRole)
         
         self.connect(self.addUrlBtn, QtCore.SIGNAL('clicked()'), self.addUrl)
         self.connect(self.dlUrlBtn, QtCore.SIGNAL('clicked()'), self.dlFile)
         
-        grid = QtGui.QGridLayout()
+        grid = QtWidgets.QGridLayout()
         grid.addWidget(self.urlLabel, 0, 0)
         grid.addWidget(self.urlEdit, 0, 1)
         grid.addWidget(self.btnBox, 1, 0, 1, 2)
@@ -404,12 +493,12 @@ class urlDatasheetDialog(QtGui.QDialog):
         url = self.getUrl()
         if (self.validUrl()):
             self.status = URLTEXT
-            QtGui.QDialog.accept(self)
+            QtWidgets.QDialog.accept(self)
     
     def validUrl(self):
         url = self.getUrl()
-        if (url.startswith("http://") == False):
-            QtGui.QMessageBox.warning(self, "Input Error", "URL needs to begin with 'http://'")
+        if (url.startswith(("http://", "https://")) == False):
+            QtWidgets.QMessageBox.warning(self, "Input Error", "URL needs to begin with 'https://' or 'http://'")
             return False
         return True
     
@@ -419,42 +508,48 @@ class urlDatasheetDialog(QtGui.QDialog):
     
     def getStatus(self):
         return self.status
+
+    def getFilename(self):
+        return self.filename
     
     def dlFile(self):
         name = self.parent.getName()
-        filename = name+".pdf"
+        self.filename = DATASHEET_DIR + get_valid_filename(name+".pdf")
         if (self.validUrl() == False):
             return
         url = self.getUrl()
         
-        req = urllib2.Request(url)
-        r = urllib2.urlopen(req)
+        #LOOK Python 2 -> python 3
+        #req = urllib2.Request(url)
+        #r = urllib2.urlopen(req)
+        r = urlopen(url) #Python 3
         
         headers = r.info()
         filetype = headers['Content-Type']
         
         if filetype == "application/pdf":
             try:
-                f = open(filename, 'wb')
+                f = open(self.filename, 'wb')
                 f.write(r.read())
                 f.close()
             except:
-                QtGui.QMessageBox.warning(self, "File Error", "Error saving to "+filename)
+                QtWidgets.QMessageBox.warning(self, "File Error", "Error saving to "+self.filename)
                 return
             
-            QtGui.QMessageBox.information(self, "File Downloaded", "Successfully downloaded to "+filename)
+            QtWidgets.QMessageBox.information(self, "File Downloaded", "Successfully downloaded to "+self.filename)
             self.status = URLDOWNLOAD
-            QtGui.QDialog.accept(self)
+            QtWidgets.QDialog.accept(self)
         else:
-            QtGui.QMessageBox.warning(self, "File Error", "Expecting PDF file, found '"+filetype+"' instead")
+            QtWidgets.QMessageBox.warning(self, "File Error", "Expecting PDF file, found '"+filetype+"' instead")
             return
         #urllib.urlretrieve(url, "test.
                     
-class componentDialog(QtGui.QDialog):
+class componentDialog(QtWidgets.QDialog):
     
     def __init__(self, parent = None, action = 'add', row=-1):
         #action can be add or modify
-        super(componentDialog, self).__init__(parent)
+        #super(componentDialog, self).__init__(parent)
+        super().__init__(parent)
         #self.move(400,30)
         
         self.parent = parent
@@ -466,66 +561,66 @@ class componentDialog(QtGui.QDialog):
         elif self.action == 'modify':
             self.component = components[self.row]
         
-        print self.component
+        print(self.component)
 
-        nameLabel = QtGui.QLabel('Name')
-        manufLabel = QtGui.QLabel('Manufacturer')
-        catLabel = QtGui.QLabel('Category')
-        packLabel = QtGui.QLabel('Package')
-        descLabel = QtGui.QLabel('Description')
-        dataLabel = QtGui.QLabel('Datasheet')
-        commentLabel = QtGui.QLabel('Comments')
+        nameLabel = QtWidgets.QLabel('Name')
+        manufLabel = QtWidgets.QLabel('Manufacturer')
+        catLabel = QtWidgets.QLabel('Category')
+        packLabel = QtWidgets.QLabel('Package')
+        descLabel = QtWidgets.QLabel('Description')
+        dataLabel = QtWidgets.QLabel('Datasheet')
+        commentLabel = QtWidgets.QLabel('Comments')
         
-        self.nameEdit = QtGui.QLineEdit(self.component[NAME])
-        self.manufEdit = QtGui.QComboBox()
-        self.catEdit = QtGui.QComboBox()
-        self.packEdit = QtGui.QComboBox()
-        self.descEdit = QtGui.QLineEdit(self.component[DESCRIPTION])
-        self.dataEdit = QtGui.QLineEdit(self.component[DATASHEET])
-        self.commentEdit = QtGui.QTextEdit(self.component[COMMENTS])
+        self.nameEdit = QtWidgets.QLineEdit(self.component[NAME])
+        self.manufEdit = QtWidgets.QComboBox()
+        self.catEdit = QtWidgets.QComboBox()
+        self.packEdit = QtWidgets.QComboBox()
+        self.descEdit = QtWidgets.QLineEdit(self.component[DESCRIPTION])
+        self.dataEdit = QtWidgets.QLineEdit(self.component[DATASHEET])
+        self.commentEdit = QtWidgets.QTextEdit(self.component[COMMENTS])
         
-        self.dataFileBtn = QtGui.QPushButton("Browse")
-        self.dataUrlBtn = QtGui.QPushButton("URL")
-        self.dataBtnBox = QtGui.QDialogButtonBox()
-        self.dataBtnBox.addButton(self.dataFileBtn, QtGui.QDialogButtonBox.ActionRole)
-        self.dataBtnBox.addButton(self.dataUrlBtn, QtGui.QDialogButtonBox.ActionRole)
+        self.dataFileBtn = QtWidgets.QPushButton("Browse")
+        self.dataUrlBtn = QtWidgets.QPushButton("URL")
+        self.dataBtnBox = QtWidgets.QDialogButtonBox()
+        self.dataBtnBox.addButton(self.dataFileBtn, QtWidgets.QDialogButtonBox.ActionRole)
+        self.dataBtnBox.addButton(self.dataUrlBtn, QtWidgets.QDialogButtonBox.ActionRole)
         
         self.connect(self.dataFileBtn, QtCore.SIGNAL('clicked()'), self.selectFile)
         self.connect(self.dataUrlBtn, QtCore.SIGNAL('clicked()'), self.addUrl)
         
-        boxLabel = QtGui.QLabel('Storage Box')
-        posLabel = QtGui.QLabel('Position')
+        boxLabel = QtWidgets.QLabel('Storage Box')
+        posLabel = QtWidgets.QLabel('Position')
         
-        self.boxEdit = QtGui.QComboBox()
-        self.posEdit = QtGui.QLineEdit(self.component[POSITION])
+        self.boxEdit = QtWidgets.QComboBox()
+        self.posEdit = QtWidgets.QLineEdit(self.component[POSITION])
         
-        minQtyLabel = QtGui.QLabel('Min. Qty Alert')
-        maxQtyLabel = QtGui.QLabel('Desired Max Qty')
-        qtyLabel = QtGui.QLabel('Qty')
+        minQtyLabel = QtWidgets.QLabel('Min. Qty Alert')
+        maxQtyLabel = QtWidgets.QLabel('Desired Max Qty')
+        qtyLabel = QtWidgets.QLabel('Qty')
         
-        self.minQtyEdit = QtGui.QSpinBox()
-        self.maxQtyEdit = QtGui.QSpinBox()
-        self.qtyEdit = QtGui.QSpinBox()
+        self.minQtyEdit = QtWidgets.QSpinBox()
+        self.maxQtyEdit = QtWidgets.QSpinBox()
+        self.qtyEdit = QtWidgets.QSpinBox()
         
 
-        supplier1Label = QtGui.QLabel('Supplier 1')
-        key1Label = QtGui.QLabel('KeyCode')
+        supplier1Label = QtWidgets.QLabel('Supplier 1')
+        key1Label = QtWidgets.QLabel('KeyCode')
         
-        self.supplier1Edit = QtGui.QComboBox()
+        self.supplier1Edit = QtWidgets.QComboBox()
         self.supplier1Edit.setMinimumSize(150, 0)
-        self.key1Edit = QtGui.QLineEdit(unicode(self.component.getSupplier(1, 'key')))
+        self.key1Edit = QtWidgets.QLineEdit(str(self.component.getSupplier(1, 'key')))
         
-        supplier2Label = QtGui.QLabel('Supplier 2')
-        key2Label = QtGui.QLabel('KeyCode')
+        supplier2Label = QtWidgets.QLabel('Supplier 2')
+        key2Label = QtWidgets.QLabel('KeyCode')
         
-        self.supplier2Edit = QtGui.QComboBox()
-        self.key2Edit = QtGui.QLineEdit(unicode(self.component.getSupplier(2, 'key')))
+        self.supplier2Edit = QtWidgets.QComboBox()
+        self.key2Edit = QtWidgets.QLineEdit(str(self.component.getSupplier(2, 'key')))
         
-        supplier3Label = QtGui.QLabel('Supplier 3')
-        key3Label = QtGui.QLabel('KeyCode')
+        supplier3Label = QtWidgets.QLabel('Supplier 3')
+        key3Label = QtWidgets.QLabel('KeyCode')
         
-        self.supplier3Edit = QtGui.QComboBox()
-        self.key3Edit = QtGui.QLineEdit(unicode(self.component.getSupplier(3, 'key')))
+        self.supplier3Edit = QtWidgets.QComboBox()
+        self.key3Edit = QtWidgets.QLineEdit(str(self.component.getSupplier(3, 'key')))
 
         manufList = sorted(components.getManufacturers())
         self.manufEdit.addItems(manufList)
@@ -549,7 +644,7 @@ class componentDialog(QtGui.QDialog):
         
         #suppRefList = sorted(components.getSuppliers(), key = lambda x: x[0])
         suppList = sorted(components.getSuppliers())
-        print suppList
+        print(suppList)
         #print suppRefList
         #suppList = [x[0] for x in suppRefList]
         #self.supplier1Edit.addItems(['RS Components','Element14','Jaycar','Conrad'])
@@ -572,17 +667,17 @@ class componentDialog(QtGui.QDialog):
         self.qtyEdit.setValue(int(self.component[QTY]))
         
 
-        buttonWidget = QtGui.QDialogButtonBox(QtGui.QDialogButtonBox.Save | QtGui.QDialogButtonBox.Cancel)
+        buttonWidget = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Save | QtWidgets.QDialogButtonBox.Cancel)
         
         buttonWidget.rejected.connect(self.reject)
         buttonWidget.accepted.connect(self.accept)
 
         
-        groupBox = QtGui.QGroupBox('Location')
-        reorderBox = QtGui.QGroupBox('Reordering')
-        qtyBox = QtGui.QGroupBox('Stock')
+        groupBox = QtWidgets.QGroupBox('Location')
+        reorderBox = QtWidgets.QGroupBox('Reordering')
+        qtyBox = QtWidgets.QGroupBox('Stock')
         
-        grid = QtGui.QGridLayout()
+        grid = QtWidgets.QGridLayout()
         grid.addWidget(nameLabel, 0, 0)
         grid.addWidget(manufLabel, 1, 0)
         grid.addWidget(catLabel, 2, 0)
@@ -601,7 +696,7 @@ class componentDialog(QtGui.QDialog):
         grid.addWidget(self.commentEdit, 7, 1, 1, 1)
 
         
-        locatGrid = QtGui.QGridLayout()
+        locatGrid = QtWidgets.QGridLayout()
         locatGrid.addWidget(boxLabel, 0, 0)
         locatGrid.addWidget(posLabel, 1, 0)
         
@@ -609,7 +704,7 @@ class componentDialog(QtGui.QDialog):
         locatGrid.addWidget(self.posEdit, 1, 1)
         locatGrid.setRowStretch(2, 1)
         
-        qtyGrid = QtGui.QGridLayout()
+        qtyGrid = QtWidgets.QGridLayout()
         qtyGrid.addWidget(minQtyLabel, 0, 0)
         qtyGrid.addWidget(maxQtyLabel, 1, 0)
         qtyGrid.addWidget(qtyLabel, 3, 0)
@@ -625,7 +720,7 @@ class componentDialog(QtGui.QDialog):
             #reorderGrid.addwidget(supplierName, y, x)
             #reorderGrid.addWidget( #add supplierEdit fn
         
-        reorderGrid = QtGui.QGridLayout()
+        reorderGrid = QtWidgets.QGridLayout()
         reorderGrid.addWidget(supplier1Label, 0, 0)
         reorderGrid.addWidget(self.supplier1Edit, 0, 1)
         reorderGrid.addWidget(key1Label, 0, 2)
@@ -651,16 +746,16 @@ class componentDialog(QtGui.QDialog):
         grid.addWidget(qtyBox, 7, 2, 3, 1)
         grid.addWidget(buttonWidget, 10, 2, 1, 1)
         
-        commentLayout = QtGui.QHBoxLayout()
+        commentLayout = QtWidgets.QHBoxLayout()
         commentLayout.addWidget(commentLabel)
         commentLayout.addWidget(self.commentEdit)
         
         
         
         
-        topLeftLayout = QtGui.QVBoxLayout()
+        topLeftLayout = QtWidgets.QVBoxLayout()
 
-        topLayout = QtGui.QHBoxLayout()
+        topLayout = QtWidgets.QHBoxLayout()
         
         #TODO Look if this is really necessary? Grid into HBOX? Left over from start...
         topLayout.addLayout(grid)
@@ -675,8 +770,23 @@ class componentDialog(QtGui.QDialog):
         #self.show()
     
     def selectFile(self):
-        file = QtGui.QFileDialog.getOpenFileName(self, "Open Datasheet", QtCore.QDir.currentPath(), "PDF(*.pdf)")
-        self.dataEdit.setText(file[0])
+
+        #datasheetDir = QtCore.QDir("datasheets")
+
+        datasheetDir = QtCore.QDir()
+        #datasheetDir.setCurrent(DATASHEET_DIR)
+        #datasheet_dir = QtCore.QDir.currentPath().dir(datasheet_dir)
+        #print(datasheetDir.currentPath())
+        
+        #file = QtWidgets.QFileDialog.getOpenFileName(self, "Open Datasheet", datasheetDir.currentPath(), "PDF(*.pdf)")
+        file = QtWidgets.QFileDialog.getOpenFileName(self, "Open Datasheet", QtCore.QDir.currentPath(), "PDF(*.pdf)")
+        """filename = QtCore.QFileInfo(file[0]).baseName()
+        #path = QtCore.QFileInfo(file[0]).path()
+        #path = QtCore.QFileInfo(file[0]).dir(QtCore.QDir.relativeFilePath(datasheetDir))\
+        path = datasheetDir.relativeFilePath(file[0])
+        print("Filename", filename)
+        print("Path:", path)"""
+        self.dataEdit.setText(QtCore.QDir.cleanPath(file[0]))
         
     def addUrl(self):
         urlDialog = urlDatasheetDialog(self)
@@ -685,7 +795,8 @@ class componentDialog(QtGui.QDialog):
             status = urlDialog.getStatus()
             
             if (status == URLDOWNLOAD):
-                filename = str(self.nameEdit.text()+".pdf")
+                #filename = get_valid_filename(str(self.nameEdit.text()+".pdf"))
+                filename = urlDialog.getFilename()
                 self.dataEdit.setText(filename)
             elif (status == URLTEXT):
                 self.dataEdit.setText(urlDialog.getUrl())
@@ -697,44 +808,48 @@ class componentDialog(QtGui.QDialog):
         #global components
         class NameError(Exception): pass
         class QtyError(Exception): pass
-        name = unicode(self.nameEdit.text())
-        manuf = unicode(self.manufEdit.currentText())
-        cat = unicode(self.catEdit.currentText())
-        pack = unicode(self.packEdit.currentText())
-        desc = unicode(self.descEdit.text())
-        data = unicode(self.dataEdit.text())
-        comments = unicode(self.commentEdit.toPlainText())
-        loc = unicode(self.boxEdit.currentText())
-        pos = unicode(self.posEdit.text())
-        minqty = self.minQtyEdit.value()
+        name = str(self.nameEdit.text())
+        manuf = str(self.manufEdit.currentText())
+        cat = str(self.catEdit.currentText())
+        pack = str(self.packEdit.currentText())
+        desc = str(self.descEdit.text())
+        data = str(self.dataEdit.text())
+        comments = str(self.commentEdit.toPlainText())
+        loc = str(self.boxEdit.currentText())
+        pos = str(self.posEdit.text())
+        """minqty = self.minQtyEdit.value()
         desqty = self.maxQtyEdit.value()
-        qty = self.qtyEdit.value()
+        qty = self.qtyEdit.value()"""
+        minqty = self.minQtyEdit.text()
+        desqty = self.maxQtyEdit.text()
+        qty = self.qtyEdit.text()
         supp1 = [self.supplier1Edit.currentText(), self.key1Edit.text()]
         supp2 = [self.supplier2Edit.currentText(), self.key2Edit.text()]
         supp3 = [self.supplier3Edit.currentText(), self.key3Edit.text()]
             
         try:
             if len(name) == 0:
-                raise NameError, ("The name can not be left empty.")
+                raise NameError("The name can not be left empty.")
             
-            if minqty > desqty:
-                raise QtyError, ("Minimum Qty can not be greater than the desired Qty")
-            
-        except NameError, e:
-            QtGui.QMessageBox.warning(self, "Name Error", unicode(e))
+            if int(minqty) > int(desqty):
+                raise QtyError("Minimum Qty can not be greater than the desired Qty")
+
+        except NameError as e:    
+        #except NameError, e:
+            QtWidgets.QMessageBox.warning(self, "Name Error", str(e))
             self.nameEdit.selectAll()
             self.nameEdit.setFocus()
             return
         
-        except QtyError, e:
-            QtGui.QMessageBox.warning(self, "Minimum Qty Error", unicode(e))
+        except QtyError as e:
+            QtWidgets.QMessageBox.warning(self, "Minimum Qty Error", str(e))
             self.minQtyEdit.selectAll()
             self.minQtyEdit.setFocus()
             return
         
         if  self.action == 'add':
-            print "Parent:", self.parent
-            self.parent.tablemode.insertRows(self.row, 1)
+            # remove below? Indexes are still off
+            #self.parent.tablemode.beginInsertRows(QtCore.QModelIndex(), self.parent.tablemode.rowCount(QtCore.QModelIndex()), self.parent.tablemode.rowCount(QtCore.QModelIndex()))
             components.addComponent(self.component)
         
         components[self.row][NAME] = name
@@ -752,22 +867,33 @@ class componentDialog(QtGui.QDialog):
         components[self.row][SUPPLIERS] = [supp1, supp2, supp3]
         
         if self.action == 'add':
-            self.parent.tablemode.endInsertRows()
+            #self.parent.tablemode.insertRow(self.parent.tablemode.rowCount(QtCore.QModelIndex()))
+            self.parent.tablemode.insertRows(0, 1)
+            print(self.parent.tablemode.columnCount(QtCore.QModelIndex()))
+            print(self.parent.proxymodel.columnCount(QtCore.QModelIndex()))
+            #self.parent.proxymodel.invalidateFilter()
+            # remove below?
+            #self.parent.tablemode.endInsertRows()
+
+            #self.parent.proxymodel.insertRow(self.parent.proxymodel.rowCount(QtCore.QModelIndex()))
+            #self.parent.tablemode.insertRows(self.parent.tablemode.rowCount(QtCore.QModelIndex()), 1)
             
         components.recreateSets()
-        print "Manuf sets:", sorted(components.getManufacturers())
+        print("Manuf sets:", sorted(components.getManufacturers()))
         
-        QtGui.QDialog.accept(self)
+        QtWidgets.QDialog.accept(self)
 
 
 
 class MyTableModel(QtCore.QAbstractTableModel):
-    def __init__(self, header, *args):
-        QtCore.QAbstractTableModel.__init__(self, *args)
+    #def __init__(self, header, *args):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        #QtCore.QAbstractTableModel.__init__(self, parent)
         self.header = header
-    def rowCount(self, parent):
+    def rowCount(self, parent = QtCore.QModelIndex()):
         return len(components)
-    def columnCount(self, parent):
+    def columnCount(self, parent = QtCore.QModelIndex()):
         return len(header)
     def data(self, index, role):
         if not index.isValid():
@@ -819,7 +945,7 @@ class MyTableModel(QtCore.QAbstractTableModel):
                     components[index.row()][QTY] = int(value)
                 except:
                     return False
-            self.emit(QtCore.SIGNAL("dataChanged(QModelIndex,QModelIndex)"), index, index)
+            self.emit(QtCore.SIGNAL("dataChanged(QModelIndex,QModelIndex,)"), index, index)
                 
             return True
         return False
@@ -829,27 +955,34 @@ class MyTableModel(QtCore.QAbstractTableModel):
     
     def sort(self, col, order):
         global components
-        print components
+        print(components)
+
         """sort table by given column number col"""
         self.emit(QtCore.SIGNAL("layoutAboutToBeChanged()"))
         #componentsList = sorted(components, key=operator.itemgetter(col))
-        componentsList = sorted(components, key=lambda component: component.name)
-        print "Col:", col
-        print componentsList
-        print components
-        if order == QtCore.Qt.DescendingOrder:
-            componentsList.reverse()
+        #if order == QtCore.Qt.DescendingOrder:
+        """if order == QtCore.Qt.AscendingOrder:
+            components = sorted(components, key=lambda component: component.name)
+        else:
+            components = sorted(components, key=lambda component: component.name, reverse = True)"""
+        """if order == QtCore.Qt.AscendingOrder:
+            components = sorted(components, key=lambda component: component[col])
+        else:
+            components = sorted(components, key=lambda component: component[col], reverse = True)"""
+        if order == QtCore.Qt.AscendingOrder:
+            components.sort(header[col], 'asc')
+        else:
+            components.sort(header[col], 'desc')
+        print("Col:", col)
+        print(components)
+        print(components[0].name)
+            #componentsList.reverse()
         self.emit(QtCore.SIGNAL("layoutChanged()"))
-        
-    #def insertRow(self, row, parent):
-    #    return self.insertRows(row, 1, parent)
 
     def insertRows(self, position, rows=1, index=QtCore.QModelIndex()):
         self.beginInsertRows(QtCore.QModelIndex(), position, position + rows - 1)
-        #TODO Open Dialog Box
-        #for row in range(rows):
-            #components.addComponent(position + row, ['Extra', 'Transistor', 'All in one package', 'Through Hole', '10', 'Texas', 'No'])
-        #self.endInsertRows()
+        self.endInsertRows()
+
         return True
     
     def removeRows(self, position, rows=1, index=QtCore.QModelIndex()):
@@ -860,9 +993,17 @@ class MyTableModel(QtCore.QAbstractTableModel):
         self.endRemoveRows()
         return True
 
-class qtyEditDelegate(QtGui.QStyledItemDelegate):
+class MySortFilterModel(QtCore.QSortFilterProxyModel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.par = parent
+
+    def sort(self, col, order):
+        self.par.tablemode.sort(col, order)
+
+class qtyEditDelegate(QtWidgets.QStyledItemDelegate):
     def createEditor(self, parent, option, index):
-        sbox = QtGui.QSpinBox(parent)
+        sbox = QtWidgets.QSpinBox(parent)
         sbox.setRange(0, 99999)
         return sbox
     
@@ -876,12 +1017,30 @@ class qtyEditDelegate(QtGui.QStyledItemDelegate):
         #dataVar = QtCore.QVariant(dataInt)
         model.setData(index,dataInt)
 
+# ------------ Functions ---------------
+
+def get_valid_filename(s):
+    """
+    From Django
+    Return the given string converted to a string that can be used for a clean
+    filename. Remove leading and trailing spaces; convert other spaces to
+    underscores; and remove anything that is not an alphanumeric, dash,
+    underscore, or dot.
+    >>> get_valid_filename("john's portrait in 2004.jpg")
+    'johns_portrait_in_2004.jpg'
+    """
+    s = str(s).strip().replace(' ', '_')
+    return re.sub(r'(?u)[^-\w.]', '', s)
+
+# ---------------------------------------------
+
 def main():
 
-    app = QtGui.QApplication(sys.argv)
+    app = QtWidgets.QApplication(sys.argv)
     ex = Window()
     sys.exit(app.exec_())
-    print components
+    print(components)
 
 if __name__ == '__main__':
     main()
+
