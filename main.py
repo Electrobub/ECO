@@ -20,9 +20,9 @@
 
 #TODO
 # - Get relative filename for PDF datasheet
-# - Add Same Name Check
-# - Add Storage Check - with component dialog (to make sure other component is not in that spot)
-# - Add checking / removal of commas in any fields (stop screwing up CSV)
+# - Add Same Name Check # is this important? As there can be different packages of same chip -> as long as the (name + package) are unique 
+# - Add checks if datasheets / exports directory exists
+# - Add icon
 
 #TODO
 # - componentDialog - add datasheet lineedit underneath comments? Look nicer?
@@ -44,6 +44,15 @@
 # Added search shortcut ctrl+F (focus/select-all)
 # Fixed index problem with adding items with QSortFilterProxyModel implemented. (Had to simply move / reref. sort() from QAbstractTableModel to QSortFilterProxyModel. Turns out QSortFilterProxyModel reimplements sort() that operates on sortRole()... Read the Docs more closely!!! http://doc.qt.io/qt-5/qsortfilterproxymodel.html )
 # super() syntax updated to PY3
+# Add checking / removal of commas in any fields (stop screwing up CSV) -> This is a non-issue with csv library...
+
+# v0.2.1
+# Add Storage Check - with component dialog (to make sure other component is not in that spot)
+# Add Prompt before closing to handle unsaved changes
+# Fix -> supplierListIndex starts at 0 (historic reason it was different?...)
+# Fixed importing numbers as INTs (CSV read) - helps with exporting code
+# Add reorder list export (All by preference (eg. Supplier 1 not Supplier 2) or by individual supplier)
+# Fix components.txt -> .csv + minor fix in filename variable
 
 """
 Create a QSortFilterProxyModel and setModel() of the QTableView to it.
@@ -73,6 +82,7 @@ URLDOWNLOAD = 0
 URLTEXT = 1
 
 DATASHEET_DIR = "datasheets/"
+EXPORT_DIR    = "exports/"
 
 import sys
 from PySide2 import QtGui
@@ -84,11 +94,13 @@ from components import ComponentContainer, Component
 from urllib.request import urlopen
 import subprocess
 import re
+import csv
 
 header = [NAME, CATEGORY, DESCRIPTION, PACKAGE, DATASHEET, QTY]
 headerSizes = [150, 150, 200, 50, 100, 50]
 headerPercent = [18, 18, 30, 10, 12, 12]
 windowWidth = 850
+unsavedState = False
 #header = ['Name', 'Category', 'Description', 'Package', 'Qty', 'Manufacturer', 'Datasheet']
 #data = [['2N222', 'Transistor', 'All in one package', 'Through Hole', '10', 'Texas', 'No'],
 #['WOWZa', 'MOSFET', 'Does what its told', 'Through Hole', '2', 'SM', 'No']]
@@ -96,13 +108,14 @@ windowWidth = 850
 dataLabels = ['Name', 'Manufacturer', 'Category', 'Package', 'Description', 'Datasheet', 'Comments', 'Location', 'Position', 'Minimum Qty.', 'Desired Qty.', 'Qty']
 #dataset = [['2N2222', 'Fairchild', 'Transistors', 'NPN General-Purpose Amplifier', 'TO-92', 'http://datasheet.com', 'Very useful chip to have on hand', 'Storage Box', 'A7', '3', '10', '5'], ['LM741', 'Texas Instruments', 'Op-Amp', 'General Purpose Op-Amp', 'PDIP-8', 'http://datasheet.com', 'Not the prettiest but does the job', 'Storage Box', 'B2', '2', '5', '5']]
 
-components = ComponentContainer('components.txt')
+#components = ComponentContainer('components.csv')
+components = ComponentContainer()
 
 #components.addComponent(Component('LM741', 'Texas Instruments', 'Op-Amp', 'PDIP-8', 'General Purpose Op-Amp', 'http://datasheet.com', 'Not the prettiest but does the job', 'Storage Box', 'B2', '2', '5', '5', [['RS', 1111], ['Conrad', 2222], ['YoShop', 3333]]))
 #components.addComponent(Component('2N2222', 'Fairchild', 'Transistors', 'TO-92', 'NPN General-Purpose Amplifier', 'http://datasheet.com', 'Very useful chip to have on hand', 'Storage Box', 'A7', '3', '10', '5', [['RS', 1111], ['Conrad', 2222], ['YoShop', 3333]]))
 
 #components.recreateSets()   
-components.loadCsvFile("components.txt")
+components.loadCsvFile("components.csv")
 
 class Window(QtWidgets.QMainWindow):
     
@@ -135,11 +148,17 @@ class Window(QtWidgets.QMainWindow):
         modifyAction.setStatusTip('Modify selected component')
         modifyAction.connect(QtCore.SIGNAL("triggered()"), self.formWidget.openModifyDialog)
         #addAction.triggered.connect()
+
+        reorderAction = QtWidgets.QAction('Generate &Reorder List', self)
+        reorderAction.setShortcut('Ctrl+R')
+        reorderAction.setStatusTip('Generate Reordering List')
+        reorderAction.connect(QtCore.SIGNAL("triggered()"), self.formWidget.openReorderDialog)
         
         aboutAction = QtWidgets.QAction('&About', self)
         aboutAction.setStatusTip('About Electronic Components Organiser')
         aboutAction.connect(QtCore.SIGNAL("triggered()"), self.aboutDialog)
         #addAction.triggered.connect()
+
         
 
         #Menubar
@@ -150,6 +169,9 @@ class Window(QtWidgets.QMainWindow):
         fileMenu.addSeparator()
         fileMenu.addAction(addAction)
         fileMenu.addAction(modifyAction)
+
+        fileMenu = menubar.addMenu('&Tools')
+        fileMenu.addAction(reorderAction)
         
         fileMenu = menubar.addMenu('&Help')
         fileMenu.addAction(aboutAction)
@@ -180,6 +202,19 @@ class Window(QtWidgets.QMainWindow):
         #Call methods to auto update the size of headers
 
         self.formWidget.windowResized(event)
+
+    def closeEvent(self, event):
+        if unsavedState is True:
+            reply = QtWidgets.QMessageBox.warning(self, 'Unsaved Changes', 
+                            "Components have been modified.\nDo you want to save your changes?", QtWidgets.QMessageBox.Save|QtWidgets.QMessageBox.Discard|QtWidgets.QMessageBox.Cancel)
+
+            if reply == QtWidgets.QMessageBox.Save:
+                components.saveCsvFile()
+                event.accept()
+            elif reply == QtWidgets.QMessageBox.Discard:
+                event.accept()
+            else:
+                event.ignore()
 
 class Overview(QtWidgets.QWidget):
 
@@ -385,9 +420,11 @@ class Overview(QtWidgets.QWidget):
             return
     
     def saveDialog(self):
+        global unsavedState
         if QtWidgets.QMessageBox.question(self, "Save", ("Are you sure you want to save components?"), QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.No) == QtWidgets.QMessageBox.No:
             return
         components.saveCsvFile()
+        unsavedState = False
     
     def openDatasheet(self, index):
         QtWidgets.QMessageBox.information(self, "Datasheet", "Here is your "+str(components[index.row()].name)+" datasheet, sir")
@@ -456,6 +493,87 @@ class Overview(QtWidgets.QWidget):
         #print "Old Percent:", oldPercent
         #print "New Percent:", newPercent
         #print "Column Resized"
+
+    def openReorderDialog(self):
+        self.dialog = reorderDialog(self)
+        self.dialog.exec_()
+        
+class reorderDialog(QtWidgets.QDialog):
+    
+    def __init__(self, parent = None):
+        super().__init__(parent)
+        
+        self.parent = parent
+        self.status = -1
+
+        exportAllLabel = QtWidgets.QLabel('Export all based on preferences')
+        self.exportAllBtn = QtWidgets.QPushButton("Export All")
+
+        self.supplierList = QtWidgets.QComboBox()
+        exportIndivLabel = QtWidgets.QLabel('Export individual supplier')
+        self.exportIndivBtn = QtWidgets.QPushButton("Export")
+        
+        self.connect(self.exportAllBtn, QtCore.SIGNAL('clicked()'), self.exportReorderAll)
+        self.connect(self.exportIndivBtn, QtCore.SIGNAL('clicked()'), self.exportReorderSupplier)
+        
+        self.supplierList.addItems(self.listReorderSuppliers())
+
+        grid = QtWidgets.QGridLayout()
+        grid.addWidget(exportAllLabel, 0, 0)
+        grid.addWidget(self.exportAllBtn, 1, 1)
+
+        grid.addWidget(exportIndivLabel, 2, 0)
+        grid.addWidget(self.supplierList, 3, 0)
+        grid.addWidget(self.exportIndivBtn, 3, 1)
+        
+        #self.resize(270, 80)
+        self.setWindowTitle('Reorder')
+        
+        self.setLayout(grid)
+
+    def listReorderSuppliers(self):
+        tempList = list()
+
+        for component in components:
+            if component.qty <= component.minqty:  
+                for supplier, ref in component.suppliers:
+                    if supplier not in tempList and supplier != '':
+                        tempList.insert(0, supplier)
+        return tempList
+
+    def processReorderList(self, supplierIndiv = None):
+        tempList = list()
+
+        for component in components:
+            if component.qty <= component.minqty:
+                if supplierIndiv is not None:
+                    for index, supplier in enumerate(component.suppliers):
+                        supplierName = supplier[0]
+                        if supplierName == supplierIndiv:
+                            tempList.append([component.getSupplier(index, 'name'), component.getSupplier(index, 'ref'), component[NAME], component[PACKAGE], component[DESIREDQTY] - component[QTY]])
+                else:
+                    tempList.append([component.getSupplier(0, 'name'), component.getSupplier(0, 'ref'), component[NAME], component[PACKAGE], component[DESIREDQTY] - component[QTY]])
+        
+        tempList = sorted(tempList, key=lambda tempList: tempList[0])
+        return tempList
+
+    def exportReorderAll(self):
+        reorderList = self.processReorderList()     
+        self.saveSuppliersCsv(reorderList, "exports/"+"reorder_list_ALL.csv")
+
+    def exportReorderSupplier(self):
+        supplierIndiv = self.supplierList.currentText()
+        reorderList = self.processReorderList(supplierIndiv)
+        self.saveSuppliersCsv(reorderList, "exports/"+"reorder_list_"+supplierIndiv+".csv")
+
+    def saveSuppliersCsv(self, reorderList, filename):
+        print("Exporting Reorder List...")
+        self.filename = filename
+        with open(self.filename, 'wt') as csvfile:
+            compWriter = csv.writer(csvfile, delimiter=',', quotechar='"')
+            compWriter.writerow(["Supplier", "Supplier Reference", "Part Name", "Package", "Qty to Order"])
+            for row in reorderList:
+                compWriter.writerow(row)
 
 class urlDatasheetDialog(QtWidgets.QDialog):
     
@@ -608,19 +726,19 @@ class componentDialog(QtWidgets.QDialog):
         
         self.supplier1Edit = QtWidgets.QComboBox()
         self.supplier1Edit.setMinimumSize(150, 0)
-        self.key1Edit = QtWidgets.QLineEdit(str(self.component.getSupplier(1, 'key')))
+        self.key1Edit = QtWidgets.QLineEdit(str(self.component.getSupplier(0, 'key')))
         
         supplier2Label = QtWidgets.QLabel('Supplier 2')
         key2Label = QtWidgets.QLabel('KeyCode')
         
         self.supplier2Edit = QtWidgets.QComboBox()
-        self.key2Edit = QtWidgets.QLineEdit(str(self.component.getSupplier(2, 'key')))
+        self.key2Edit = QtWidgets.QLineEdit(str(self.component.getSupplier(1, 'key')))
         
         supplier3Label = QtWidgets.QLabel('Supplier 3')
         key3Label = QtWidgets.QLabel('KeyCode')
         
         self.supplier3Edit = QtWidgets.QComboBox()
-        self.key3Edit = QtWidgets.QLineEdit(str(self.component.getSupplier(3, 'key')))
+        self.key3Edit = QtWidgets.QLineEdit(str(self.component.getSupplier(2, 'key')))
 
         manufList = sorted(components.getManufacturers())
         self.manufEdit.addItems(manufList)
@@ -650,16 +768,16 @@ class componentDialog(QtWidgets.QDialog):
         #self.supplier1Edit.addItems(['RS Components','Element14','Jaycar','Conrad'])
         self.supplier1Edit.addItems(suppList)
         self.supplier1Edit.setEditable(True)
-        self.supplier1Edit.setCurrentIndex(suppList.index(self.component.getSupplier(1, 'name')))
+        self.supplier1Edit.setCurrentIndex(suppList.index(self.component.getSupplier(0, 'name')))
         #self.supplier1Edit.setCurrentIndex(suppList.index(self.component[LOCATION]))
         
         self.supplier2Edit.addItems(suppList)
         self.supplier2Edit.setEditable(True)
-        self.supplier2Edit.setCurrentIndex(suppList.index(self.component.getSupplier(2, 'name')))
+        self.supplier2Edit.setCurrentIndex(suppList.index(self.component.getSupplier(1, 'name')))
         
         self.supplier3Edit.addItems(suppList)
         self.supplier3Edit.setEditable(True)
-        self.supplier3Edit.setCurrentIndex(suppList.index(self.component.getSupplier(3, 'name')))
+        self.supplier3Edit.setCurrentIndex(suppList.index(self.component.getSupplier(2, 'name')))
         
         self.minQtyEdit.setMinimum(-1)
         self.minQtyEdit.setValue(int(self.component[MINQTY]))
@@ -806,8 +924,10 @@ class componentDialog(QtWidgets.QDialog):
     
     def accept(self):
         #global components
+        global unsavedState
         class NameError(Exception): pass
         class QtyError(Exception): pass
+        class PosError(Exception): pass
         name = str(self.nameEdit.text())
         manuf = str(self.manufEdit.currentText())
         cat = str(self.catEdit.currentText())
@@ -820,9 +940,9 @@ class componentDialog(QtWidgets.QDialog):
         """minqty = self.minQtyEdit.value()
         desqty = self.maxQtyEdit.value()
         qty = self.qtyEdit.value()"""
-        minqty = self.minQtyEdit.text()
-        desqty = self.maxQtyEdit.text()
-        qty = self.qtyEdit.text()
+        minqty = int(self.minQtyEdit.text())
+        desqty = int(self.maxQtyEdit.text())
+        qty = int(self.qtyEdit.text())
         supp1 = [self.supplier1Edit.currentText(), self.key1Edit.text()]
         supp2 = [self.supplier2Edit.currentText(), self.key2Edit.text()]
         supp3 = [self.supplier3Edit.currentText(), self.key3Edit.text()]
@@ -831,8 +951,15 @@ class componentDialog(QtWidgets.QDialog):
             if len(name) == 0:
                 raise NameError("The name can not be left empty.")
             
-            if int(minqty) > int(desqty):
+            if minqty > desqty:
                 raise QtyError("Minimum Qty can not be greater than the desired Qty")
+
+            for row in [x for x in range(len(components)) if x != self.row]:
+                component = components[row]
+
+                if loc == component[LOCATION] and pos == component[POSITION]:
+                    if not (name == component[NAME] and pack == component[PACKAGE]):
+                        raise PosError("Cannot have 2 different components in the same location.\n\n"+"Already exists:\nComponent: "+component[NAME]+"\nPackage: "+component[PACKAGE])
 
         except NameError as e:    
         #except NameError, e:
@@ -845,6 +972,12 @@ class componentDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "Minimum Qty Error", str(e))
             self.minQtyEdit.selectAll()
             self.minQtyEdit.setFocus()
+            return
+
+        except PosError as e:
+            QtWidgets.QMessageBox.warning(self, "Same Position Error", str(e))
+            self.posEdit.selectAll()
+            self.posEdit.setFocus()
             return
         
         if  self.action == 'add':
@@ -880,8 +1013,10 @@ class componentDialog(QtWidgets.QDialog):
             
         components.recreateSets()
         print("Manuf sets:", sorted(components.getManufacturers()))
-        
+
+        unsavedState = True
         QtWidgets.QDialog.accept(self)
+
 
 
 
@@ -938,6 +1073,8 @@ class MyTableModel(QtCore.QAbstractTableModel):
     #Rapid GUI Programming Pg 449 Table 14.2
     def setData(self, index, value, role=QtCore.Qt.EditRole):
         global components
+        global unsavedState
+
         if index.isValid() and 0 <= index.row() < len(components):
             column = index.column()
             if header[column] == QTY:
@@ -946,6 +1083,7 @@ class MyTableModel(QtCore.QAbstractTableModel):
                 except:
                     return False
             self.emit(QtCore.SIGNAL("dataChanged(QModelIndex,QModelIndex,)"), index, index)
+            unsavedState = True
                 
             return True
         return False

@@ -93,8 +93,9 @@ class Component(object):
         elif (key==SUPPLIERS):
             self.suppliers = value
             
-    def getSupplier(self, position = 1, value = 'name'):
-        listPos = position - 1
+    def getSupplier(self, position = 0, value = 'name'):
+        #listPos = position - 1
+        listPos = position
         if value == 'name':
             return self.suppliers[listPos][0]
         return self.suppliers[listPos][1]
@@ -102,8 +103,8 @@ class Component(object):
 class ComponentContainer(object):
     
     #Component IDs start from 1
-    def __init__(self, filename):
-        self.filename = (filename)
+    def __init__(self):
+        self.filename = ""
         #self.components = {} #Why use a dictionary?
         self.components = []
         self.manufacturers = set()
@@ -227,8 +228,8 @@ class ComponentContainer(object):
         return sortedSuppliers
     
     
-    def loadCsvFile(self, filename="components.txt"):
-        #self.filename = filename
+    def loadCsvFile(self, filename="components.csv"):
+        self.filename = filename
         with open(self.filename, 'a+t') as csvfile:
         #with open(self.filename, 'rt') as csvfile:
             csvfile.seek(0)
@@ -236,9 +237,9 @@ class ComponentContainer(object):
             for row in compReader:
                 # 3 Suppliers. Order: Name, RefCode
                 suppliersPrepList = [[row[12], row[13]], [row[14], row[15]], [row[16], row[17]]]
-                self.addComponent(Component(row[NAME], row[MANUFACTURER], row[CATEGORY], row[PACKAGE],row[DESCRIPTION], row[DATASHEET], row[COMMENTS], row[LOCATION], row[POSITION], row[MINQTY], row[DESIREDQTY], row[QTY], suppliersPrepList))
+                self.addComponent(Component(row[NAME], row[MANUFACTURER], row[CATEGORY], row[PACKAGE],row[DESCRIPTION], row[DATASHEET], row[COMMENTS], row[LOCATION], row[POSITION], int(row[MINQTY]), int(row[DESIREDQTY]), int(row[QTY]), suppliersPrepList))
     
-    def saveCsvFile(self, filename="components.txt"):
+    def saveCsvFile(self, filename="components.csv"):
         print("Saving...")
         self.filename = filename
         with open(self.filename, 'wt') as csvfile:
